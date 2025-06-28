@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Canvas Collaboratif Infini</title>
+  <script src="https://cdn.jsdelivr.net/npm/pixi.js@7.x/dist/pixi.min.js"></script>
+  <style>
+    html, body {
+      margin: 0;
+      overflow: hidden;
+      font-family: Arial, sans-serif;
+    }
+    
+    .canvas-container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      background: #f0f0f0;
+      cursor: none; /* Masquer le curseur natif */
+    }
+    
+    .canvas-container:active {
+      cursor: grabbing;
+    }
+    
+    #canvas {
+      position: absolute;
+      background: #fff;
+      box-shadow: 0 0 20px rgba(0,0,0,0.1);
+    }
+    
+    #pixi-canvas {
+      position: absolute;
+      top: 0; left: 0; width: 100vw; height: 100vh;
+      z-index: 1;
+      pointer-events: none;
+    }
+    
+    .controls {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      z-index: 1000;
+      background: rgba(255, 255, 255, 0.95);
+      padding: 15px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      backdrop-filter: blur(10px);
+    }
+    
+    .control-group {
+      margin-bottom: 10px;
+    }
+    
+    .control-group:last-child {
+      margin-bottom: 0;
+    }
+    
+    .clear-btn {
+      background: #ff4757;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: background 0.3s;
+      width: 100%;
+    }
+    
+    .clear-btn:hover {
+      background: #ff3742;
+    }
+    
+    .zoom-controls {
+      display: flex;
+      gap: 5px;
+    }
+    
+    .zoom-btn {
+      background: #3742fa;
+      color: white;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: background 0.3s;
+    }
+    
+    .zoom-btn:hover {
+      background: #2f3542;
+    }
+    
+    .status {
+      margin-top: 10px;
+      font-size: 12px;
+      color: #666;
+    }
+    
+    .coordinates {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: rgba(0, 0, 0, 0.8);
+      color: white;
+      padding: 10px;
+      border-radius: 5px;
+      font-size: 12px;
+      font-family: monospace;
+    }
+    
+    .grid {
+      position: absolute;
+      pointer-events: none;
+      background-image: 
+        linear-gradient(rgba(0,0,0,0.1) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,0,0,0.1) 1px, transparent 1px);
+      background-size: 50px 50px;
+    }
+    
+    #cursor-preview {
+      position: fixed;
+      pointer-events: none;
+      z-index: 2000;
+      opacity: 0.5;
+      mix-blend-mode: multiply;
+      transition: background 0.1s, border 0.1s;
+    }
+  </style>
+</head>
+<body>
+  <div class="canvas-container" id="container">
+    <div class="grid" id="grid"></div>
+    <div id="pixi-canvas"></div>
+    <div id="cursor-preview"></div>
+  </div>
+  
+  <div class="controls">
+    <div class="control-group">
+      <button class="clear-btn" onclick="clearCanvas()">🧹 Effacer tout</button>
+    </div>
+    <div class="control-group">
+      <label style="font-size:12px;">Couleur : <input type="color" id="colorPicker" value="#000000" style="vertical-align:middle;"></label>
+    </div>
+    <div class="control-group">
+      <label style="font-size:12px;">Taille : <input type="range" id="sizePicker" min="1" max="20" value="2" style="vertical-align:middle;width:60px;"></label>
+      <span id="sizeValue" style="font-size:12px;">2</span> px
+    </div>
+    <div class="control-group">
+      <div class="zoom-controls">
+        <button class="zoom-btn" onclick="zoomIn()">🔍+</button>
+        <button class="zoom-btn" onclick="zoomOut()">🔍-</button>
+        <button class="zoom-btn" onclick="resetView()">🏠</button>
+      </div>
+    </div>
+    <div class="control-group">
+      <div style="font-size: 11px; color: #666; line-height: 1.4;">
+        <strong>Navigation :</strong><br>
+        • Trackpad : Déplacer<br>
+        • Molette : Zoom<br>
+        • Ctrl+Clic : Pan
+      </div>
+    </div>
+    <div class="control-group">
+      <label style="font-size:12px;">Brush :
+        <select id="brushType" style="vertical-align:middle;">
+          <option value="round">Rond doux</option>
+          <option value="calligraphic">Calligraphique</option>
+          <option value="crayon">Crayon</option>
+          <option value="marker">Marqueur</option>
+          <option value="eraser">Gomme</option>
+          <option value="rainbow">Rainbow</option>
+          <option value="pattern">Pattern</option>
+        </select>
+      </label>
+    </div>
+    <div class="status" id="status">En attente de connexion...</div>
+  </div>
+  
+  <div class="coordinates" id="coordinates">X: 0, Y: 0</div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const container = document.getElementById('container');
+    const grid = document.getElementById('grid');
+    const socket = io();
+    const statusEl = document.getElementById('status');
+    const coordsEl = document.getElementById('coordinates');
+    const cursorPreview = document.getElementById('cursor-preview');
+    let mouseScreenX = 0;
+    let mouseScreenY = 0;
+
+    // Variables pour la virtualisation et le pan/zoom
+    let drawing = false;
+    let lastPoint = null;
+    let isScrolling = false;
+    let scrollTimeout = null;
+    let viewport = {
+      x: 0,
+      y: 0,
+      scale: 1
+    };
+    
+    // Optimisation : stockage des points par chunks
+    const CHUNK_SIZE = 1000;
+    const drawingChunks = new Map();
+    
+    // Fonction pour obtenir la clé d'un chunk
+    function getChunkKey(x, y) {
+      const chunkX = Math.floor(x / CHUNK_SIZE);
+      const chunkY = Math.floor(y / CHUNK_SIZE);
+      return `${chunkX},${chunkY}`;
+    }
+    
+    // Fonction pour ajouter un point à un chunk
+    function addPointToChunk(x, y) {
+      const chunkKey = getChunkKey(x, y);
+      if (!drawingChunks.has(chunkKey)) {
+        drawingChunks.set(chunkKey, []);
+      }
+      drawingChunks.get(chunkKey).push({ x, y });
+    }
+    
+    // Fonction pour obtenir les points d'un chunk
+    function getChunkPoints(chunkKey) {
+      return drawingChunks.get(chunkKey) || [];
+    }
+    
+    // Fonction pour effacer le canvas
+    function clearCanvas() {
+      if (confirm('Êtes-vous sûr de vouloir effacer tout le canvas ?')) {
+        drawingChunks.clear();
+        lastPoint = null;
+        socket.emit('clearCanvas');
+        statusEl.textContent = 'Canvas effacé';
+      }
+    }
+    
+    // Fonctions de zoom
+    function zoomIn() {
+      viewport.scale = Math.min(viewport.scale * 1.2, 5);
+      updateTransform();
+    }
+    
+    function zoomOut() {
+      viewport.scale = Math.max(viewport.scale / 1.2, 0.1);
+      updateTransform();
+    }
+    
+    function resetView() {
+      viewport.x = 0;
+      viewport.y = 0;
+      viewport.scale = 1;
+      updateTransform();
+    }
+    
+    // Mise à jour de la transformation du canvas
+    function updateTransform() {
+      // ctx.setTransform(...) supprimé
+      // Mise à jour de la grille
+      grid.style.transform = `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.scale})`;
+    }
+    
+    // Gestion du pan (déplacement) et du zoom (wheel)
+    container.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const rect = container.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      if (e.ctrlKey || e.metaKey || e.shiftKey || Math.abs(e.deltaX) > 0) {
+        // Pan (trackpad ou shift/ctrl)
+        const panSpeed = 1.5 / viewport.scale;
+        viewport.x += e.deltaX * panSpeed;
+        viewport.y += e.deltaY * panSpeed;
+      } else {
+        // Zoom centré sur la souris
+        const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+        const wx = mouseX / viewport.scale + viewport.x;
+        const wy = mouseY / viewport.scale + viewport.y;
+        viewport.scale = Math.max(0.1, Math.min(5, viewport.scale * zoomFactor));
+        viewport.x = wx - mouseX / viewport.scale;
+        viewport.y = wy - mouseY / viewport.scale;
+      }
+      updateTransform();
+      updateCursorPreview();
+    });
+
+    // Conversion souris -> monde virtuel
+    container.addEventListener('mousemove', (e) => {
+      const rect = container.getBoundingClientRect();
+      mouseScreenX = e.clientX;
+      mouseScreenY = e.clientY;
+      const x = (e.clientX - rect.left) / viewport.scale + viewport.x;
+      const y = (e.clientY - rect.top) / viewport.scale + viewport.y;
+      coordsEl.textContent = `X: ${Math.round(x)}, Y: ${Math.round(y)}`;
+      
+      if (drawing && !isScrolling) {
+        let seg;
+        if (lastPoint) {
+          seg = {
+            x1: lastPoint.x, y1: lastPoint.y,
+            x2: x, y2: y,
+            color: brushColor,
+            size: brushSize,
+            brush: brushType
+          };
+        } else {
+          seg = {
+            x1: x, y1: y,
+            x2: x, y2: y,
+            color: brushColor,
+            size: brushSize,
+            brush: brushType
+          };
+        }
+        addSegmentToChunk(seg);
+        socket.emit('draw', seg);
+        lastPoint = { x, y };
+        updateCursorPreview();
+      }
+      socket.emit('cursorMove', {
+        uuid: myUUID,
+        x: x,
+        y: y,
+        size: brushSize,
+        color: brushColor,
+        brush: brushType
+      });
+      updateCursorPreview();
+    });
+    
+    // Ajout des variables pour la couleur et la taille
+    const colorPicker = document.getElementById('colorPicker');
+    const sizePicker = document.getElementById('sizePicker');
+    const sizeValue = document.getElementById('sizeValue');
+    const brushTypeSelect = document.getElementById('brushType');
+    let brushColor = colorPicker.value;
+    let brushSize = parseInt(sizePicker.value);
+    let brushType = brushTypeSelect.value;
+    colorPicker.addEventListener('input', () => { brushColor = colorPicker.value; updateCursorPreview(); });
+    sizePicker.addEventListener('input', () => {
+      brushSize = parseInt(sizePicker.value);
+      sizeValue.textContent = brushSize;
+      updateCursorPreview();
+    });
+    brushTypeSelect.addEventListener('change', () => {
+      brushType = brushTypeSelect.value;
+      updateCursorPreview();
+    });
+    
+    // Événements Socket.IO
+    socket.on('connect', () => {
+      statusEl.textContent = 'Connecté - En attente de l\'historique...';
+    });
+
+    socket.on('drawingHistory', (history) => {
+      drawingChunks.clear();
+      history.forEach(seg => addSegmentToChunk(seg));
+      statusEl.textContent = `Connecté - ${history.length} segments chargés`;
+    });
+
+    socket.on('draw', (data) => {
+      addSegmentToChunk(data);
+    });
+
+    socket.on('clearCanvas', () => {
+      drawingChunks.clear();
+      lastPoint = null;
+      statusEl.textContent = 'Canvas effacé par un autre utilisateur';
+    });
+
+    socket.on('disconnect', () => {
+      statusEl.textContent = 'Déconnecté - Tentative de reconnexion...';
+    });
+    
+    // Initialisation
+    updateTransform();
+    updateCursorPreview();
+
+    // Adapter la taille du canvas à la fenêtre
+    function resizeCanvas() {
+      container.style.width = `${window.innerWidth}px`;
+      container.style.height = `${window.innerHeight}px`;
+      updateTransform();
+      updateCursorPreview();
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    // Stocker les segments dans les chunks
+    function addSegmentToChunk(seg) {
+      const chunkKey = getChunkKey(seg.x2, seg.y2);
+      if (!drawingChunks.has(chunkKey)) {
+        drawingChunks.set(chunkKey, []);
+      }
+      drawingChunks.get(chunkKey).push(seg);
+    }
+
+    // Gestion du dessin (mousedown/mouseup/mouseleave)
+    container.addEventListener('mousedown', (e) => {
+      if (e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+        drawing = true;
+        lastPoint = null;
+      }
+    });
+    container.addEventListener('mouseup', () => {
+      drawing = false;
+      lastPoint = null;
+    });
+    container.addEventListener('mouseleave', () => {
+      drawing = false;
+      lastPoint = null;
+      cursorPreview.style.display = 'none';
+    });
+    container.addEventListener('mouseenter', () => {
+      cursorPreview.style.display = 'block';
+    });
+
+    function updateCursorPreview() {
+      // Taille du curseur adaptée au zoom
+      const size = brushSize * viewport.scale;
+      cursorPreview.style.width = `${size}px`;
+      cursorPreview.style.height = `${size}px`;
+      cursorPreview.style.left = `${mouseScreenX - size/2}px`;
+      cursorPreview.style.top = `${mouseScreenY - size/2}px`;
+      cursorPreview.style.borderRadius = '50%';
+      cursorPreview.style.background = brushColor;
+      cursorPreview.style.border = `1.5px solid #222`;
+      cursorPreview.style.opacity = '0.4';
+      cursorPreview.style.position = 'fixed';
+      cursorPreview.style.pointerEvents = 'none';
+      cursorPreview.style.zIndex = 2000;
+      cursorPreview.style.mixBlendMode = 'multiply';
+      cursorPreview.style.display = 'block';
+    }
+
+    // Générer un UUID simple pour chaque client
+    function uuidv4() {
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+      });
+    }
+    const myUUID = uuidv4();
+
+    // Stockage des curseurs des autres utilisateurs
+    const remoteCursors = {};
+    const remoteCursorTimeouts = {};
+
+    // Affichage des curseurs distants
+    function updateRemoteCursors() {
+      // Supprimer les anciens curseurs
+      document.querySelectorAll('.remote-cursor').forEach(el => el.remove());
+      Object.values(remoteCursors).forEach(cursor => {
+        const size = (cursor.size || 16) * viewport.scale;
+        const screenX = (cursor.x - viewport.x) * viewport.scale;
+        const screenY = (cursor.y - viewport.y) * viewport.scale;
+        if (screenX < 0 || screenY < 0 || screenX > container.clientWidth || screenY > container.clientHeight) return;
+        const el = document.createElement('div');
+        el.className = 'remote-cursor';
+        el.style.position = 'fixed';
+        el.style.left = `${screenX - size/2}px`;
+        el.style.top = `${screenY - size/2}px`;
+        el.style.width = `${size}px`;
+        el.style.height = `${size}px`;
+        el.style.background = cursor.color || '#00f';
+        el.style.opacity = '0.5';
+        el.style.borderRadius = '50%';
+        el.style.pointerEvents = 'none';
+        el.style.zIndex = 2100;
+        el.style.border = '2px solid #fff';
+        el.innerHTML = `<span style='position:absolute;top:100%;left:50%;transform:translateX(-50%);font-size:10px;color:${cursor.color || '#00f'};background:#fff;padding:1px 4px;border-radius:4px;box-shadow:0 1px 4px #0002;'>${cursor.uuid.slice(0, 8)}</span>`;
+        document.body.appendChild(el);
+      });
+    }
+
+    // Mettre à jour les curseurs distants après chaque redraw/zoom/pan
+    function updateAllCursors() {
+      updateCursorPreview();
+      updateRemoteCursors();
+    }
+
+    // Recevoir la position des autres curseurs
+    socket.on('remoteCursor', (data) => {
+      if (data.uuid !== myUUID) {
+        remoteCursors[data.uuid] = data;
+        updateRemoteCursors();
+        // (Re)lancer le timer d'expiration pour ce curseur
+        if (remoteCursorTimeouts[data.uuid]) {
+          clearTimeout(remoteCursorTimeouts[data.uuid]);
+        }
+        remoteCursorTimeouts[data.uuid] = setTimeout(() => {
+          // Log pour debug (à retirer ensuite)
+          // console.log('Suppression curseur distant', data.uuid);
+          delete remoteCursors[data.uuid];
+          updateRemoteCursors();
+          // Nettoyage du DOM au cas où
+          document.querySelectorAll('.remote-cursor').forEach(el => {
+            if (el.innerHTML.includes(data.uuid.slice(0, 8))) el.remove();
+          });
+        }, 500);
+      }
+    });
+
+    // Nettoyer les curseurs distants à la déconnexion
+    socket.on('userDisconnect', (uuid) => {
+      delete remoteCursors[uuid];
+      if (remoteCursorTimeouts[uuid]) {
+        clearTimeout(remoteCursorTimeouts[uuid]);
+        delete remoteCursorTimeouts[uuid];
+      }
+      updateRemoteCursors();
+    });
+
+    // Mettre à jour les curseurs après chaque zoom/pan
+    container.addEventListener('wheel', updateAllCursors);
+    window.addEventListener('resize', updateAllCursors);
+
+    // --- SUPPRESSION DES FONCTIONS 2D ---
+    // (drawSoftRound, drawCalligraphic, drawCrayon, drawMarker, drawEraser, drawRainbow, drawPattern, drawSegment)
+    // (et tout appel à drawSegment)
+    // Le rendu est désormais uniquement géré par PixiJS (voir pixiRedrawSegments)
+    // --- FIN SUPPRESSION ---
+
+    // --- PIXIJS SETUP ---
+    const pixiContainer = document.getElementById('pixi-canvas');
+    const app = new PIXI.Application({
+      width: container.clientWidth,
+      height: container.clientHeight,
+      backgroundAlpha: 0,
+      antialias: true,
+      resolution: window.devicePixelRatio || 1,
+      autoDensity: true
+    });
+    pixiContainer.appendChild(app.view);
+    app.view.style.width = '100vw';
+    app.view.style.height = '100vh';
+    app.stage.sortableChildren = true;
+    // Layer pour les segments
+    const segmentLayer = new PIXI.Container();
+    app.stage.addChild(segmentLayer);
+    // Fonction pour dessiner tous les segments visibles (brush marker simple)
+    function pixiRedrawSegments() {
+      segmentLayer.removeChildren();
+      drawingChunks.forEach(chunk => {
+        chunk.forEach(seg => {
+          let g = new PIXI.Graphics();
+          const color = seg.color || '#000';
+          const size = (seg.size || 2) * viewport.scale;
+          switch(seg.brush) {
+            case 'calligraphic': {
+              // Ovale orienté
+              const x1 = (seg.x1 - viewport.x) * viewport.scale;
+              const y1 = (seg.y1 - viewport.y) * viewport.scale;
+              const x2 = (seg.x2 - viewport.x) * viewport.scale;
+              const y2 = (seg.y2 - viewport.y) * viewport.scale;
+              const angle = Math.atan2(y2 - y1, x2 - x1) - Math.PI/6;
+              g.beginFill(PIXI.utils.string2hex(color), 0.8);
+              g.drawEllipse(x1, y1, size, size*0.5, angle);
+              g.endFill();
+              break;
+            }
+            case 'crayon': {
+              // Granuleux : plusieurs traits alpha faibles
+              for (let i = 0; i < 6; i++) {
+                g.lineStyle(size + Math.random()*2-1, PIXI.utils.string2hex(color), 0.2 + Math.random()*0.3);
+                g.moveTo((seg.x1 - viewport.x) * viewport.scale, (seg.y1 - viewport.y) * viewport.scale);
+                g.lineTo((seg.x2 - viewport.x) * viewport.scale, (seg.y2 - viewport.y) * viewport.scale);
+              }
+              break;
+            }
+            case 'marker': {
+              // Bord net, léger jitter
+              let x1 = (seg.x1 - viewport.x) * viewport.scale + (Math.random()-0.5)*2;
+              let y1 = (seg.y1 - viewport.y) * viewport.scale + (Math.random()-0.5)*2;
+              let x2 = (seg.x2 - viewport.x) * viewport.scale + (Math.random()-0.5)*2;
+              let y2 = (seg.y2 - viewport.y) * viewport.scale + (Math.random()-0.5)*2;
+              g.lineStyle(size, PIXI.utils.string2hex(color), 0.8);
+              g.moveTo(x1, y1);
+              g.lineTo(x2, y2);
+              break;
+            }
+            case 'eraser': {
+              // Gomme (efface)
+              g.lineStyle(size, 0xffffff, 1);
+              g.blendMode = PIXI.BLEND_MODES.ERASE;
+              g.moveTo((seg.x1 - viewport.x) * viewport.scale, (seg.y1 - viewport.y) * viewport.scale);
+              g.lineTo((seg.x2 - viewport.x) * viewport.scale, (seg.y2 - viewport.y) * viewport.scale);
+              break;
+            }
+            case 'rainbow': {
+              // Couleur dynamique
+              const t = (seg.x1 + seg.y1 + seg.x2 + seg.y2) * 0.5;
+              const rainbow = PIXI.utils.string2hex(`hsl(${(t*10)%360},100%,50%)`);
+              g.lineStyle(size, rainbow, 0.9);
+              g.moveTo((seg.x1 - viewport.x) * viewport.scale, (seg.y1 - viewport.y) * viewport.scale);
+              g.lineTo((seg.x2 - viewport.x) * viewport.scale, (seg.y2 - viewport.y) * viewport.scale);
+              break;
+            }
+            case 'pattern': {
+              // Hachures (pointillés)
+              g.lineStyle(size, PIXI.utils.string2hex(color), 0.8);
+              g.moveTo((seg.x1 - viewport.x) * viewport.scale, (seg.y1 - viewport.y) * viewport.scale);
+              g.lineTo((seg.x2 - viewport.x) * viewport.scale, (seg.y2 - viewport.y) * viewport.scale);
+              // PixiJS ne supporte pas nativement les pointillés, mais on peut simuler
+              // (ici, on fait un trait normal pour la démo)
+              break;
+            }
+            case 'round':
+            default: {
+              // Soft round (léger alpha, ombre)
+              g.lineStyle(size, PIXI.utils.string2hex(color), 0.7);
+              g.moveTo((seg.x1 - viewport.x) * viewport.scale, (seg.y1 - viewport.y) * viewport.scale);
+              g.lineTo((seg.x2 - viewport.x) * viewport.scale, (seg.y2 - viewport.y) * viewport.scale);
+              break;
+            }
+          }
+          segmentLayer.addChild(g);
+        });
+      });
+    }
+    // Synchroniser le pan/zoom PixiJS avec le viewport
+    function syncPixiViewport() {
+      app.renderer.resize(container.clientWidth, container.clientHeight);
+      pixiRedrawSegments();
+    }
+    window.addEventListener('resize', syncPixiViewport);
+    // Appeler syncPixiViewport à chaque pan/zoom/dessin
+    function schedulePixiRedraw() { requestAnimationFrame(syncPixiViewport); }
+  </script>
+</body>
+</html> 
