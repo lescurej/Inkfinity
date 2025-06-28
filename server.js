@@ -16,6 +16,14 @@ const io = new Server(server, {
   transports: ['websocket']
 });
 
+// Serve static files from the dist directory
+app.use(express.static(path.join(__dirname, 'dist')));
+
+// Handle all routes by serving index.html (for SPA routing)
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
+
 // Stockage en mémoire avec limite de 2000 strokes
 const canvasState = {
   strokes: [],
@@ -40,12 +48,12 @@ async function loadHistory() {
     // S'assurer de ne pas dépasser la limite au chargement
     if (canvasState.strokes.length > canvasState.maxStrokes) {
       canvasState.strokes = canvasState.strokes.slice(-canvasState.maxStrokes);
-      console.log('🧹 Historique tronqué à', canvasState.maxStrokes, 'strokes');
+      console.log('🧹 History truncated to', canvasState.maxStrokes, 'strokes');
     }
     
-    console.log('📚 Historique chargé:', canvasState.strokes.length, 'strokes');
+    console.log('📚 History loaded:', canvasState.strokes.length, 'strokes');
   } catch (error) {
-    console.log('📚 Pas d\'historique existant, démarrage à vide');
+    console.log('📚 No history file found, starting fresh');
   }
 }
 
@@ -59,21 +67,21 @@ async function saveHistory() {
       lastUpdate: new Date().toISOString()
     };
     await fs.writeFile(HISTORY_FILE, JSON.stringify(data, null, 2));
-    console.log('💾 Sauvegarde:', canvasState.strokes.length, '/', canvasState.maxStrokes, 'strokes');
+    console.log('💾 Saved:', canvasState.strokes.length, '/', canvasState.maxStrokes, 'strokes');
   } catch (error) {
-    console.error('❌ Erreur sauvegarde:', error.message);
+    console.error('❌ Save error:', error.message);
   }
 }
 
 // Sauvegarder toutes les 30 secondes
-setInterval(saveHistory, 30000);
+setInterval(saveHistory, 30 * 1000);
 
 // Nettoyer les strokes les plus anciens si nécessaire
 function cleanupOldStrokes() {
   if (canvasState.strokes.length > canvasState.maxStrokes) {
     const toRemove = canvasState.strokes.length - canvasState.maxStrokes;
     canvasState.strokes.splice(0, toRemove);
-    console.log('🧹 Supprimé', toRemove, 'anciens strokes (limite:', canvasState.maxStrokes, ')');
+    console.log('🧹 Removed', toRemove, 'old strokes (limit:', canvasState.maxStrokes, ')');
   }
 }
 
@@ -86,7 +94,7 @@ function cleanupZombieConnections() {
     if (now - lastHeartbeat > heartbeatTimeout) {
       const socket = io.sockets.sockets.get(socketId);
       if (socket) {
-        console.log('🧟 Connection zombie détectée, forçage de la déconnexion:', socketId);
+        console.log('🧟 Zombie connection detected, forcing disconnection:', socketId);
         socket.disconnect(true);
       }
       socketHeartbeats.delete(socketId);
@@ -98,7 +106,7 @@ function cleanupZombieConnections() {
     if (now - lastActivity > activityTimeout) {
       connectedUsers.delete(uuid);
       io.emit('userDisconnect', uuid);
-      console.log('🧹 Utilisateur inactif supprimé:', uuid);
+      console.log('🧹 Inactive user removed:', uuid);
     }
   }
 }
@@ -107,39 +115,39 @@ function cleanupZombieConnections() {
 setInterval(cleanupZombieConnections, 30000);
 
 io.on('connection', (socket) => {
-  console.log('🟢 Nouveau client connecté:', socket.id);
+  console.log('🟢 New client connected:', socket.id);
   
   socketHeartbeats.set(socket.id, Date.now());
   socketLastActivity.set(socket.id, Date.now());
   
-  // 1. Envoyer l'état complet au nouveau client
+  // 1. Send complete state to new client
   socket.emit('canvas-state', {
     strokes: canvasState.strokes,
     totalStrokes: canvasState.strokes.length,
     maxStrokes: canvasState.maxStrokes
   });
   
-  console.log('📤 État envoyé à', socket.id, ':', canvasState.strokes.length, 'strokes');
+  console.log('📤 State sent to', socket.id, ':', canvasState.strokes.length, 'strokes');
   
-  // 2. Écouter les nouveaux traits
+  // 2. Listen for new strokes
   socket.on('draw', (stroke) => {
     socketLastActivity.set(socket.id, Date.now());
     
-    // Validation du stroke
+    // Stroke validation
     if (!stroke || !Array.isArray(stroke.points) || stroke.points.length === 0) {
       return;
     }
     
-    // Si c'est un eraser, supprimer les strokes qui intersectent
+    // If it's an eraser, remove intersecting strokes
     if (stroke.brush === 'eraser') {
       const eraserRadius = stroke.size / 2;
       const strokesToRemove = [];
       
       for (let i = 0; i < canvasState.strokes.length; i++) {
         const existingStroke = canvasState.strokes[i];
-        if (existingStroke.brush === 'eraser') continue; // Ne pas supprimer les autres erasers
+        if (existingStroke.brush === 'eraser') continue; // Don't remove other erasers
         
-        // Vérifier si le stroke intersecte avec l'eraser
+        // Check if stroke intersects with eraser
         for (const eraserPoint of stroke.points) {
           for (const strokePoint of existingStroke.points) {
             const distance = Math.sqrt(
@@ -155,49 +163,49 @@ io.on('connection', (socket) => {
         }
       }
       
-      // Supprimer les strokes dans l'ordre inverse pour éviter les problèmes d'index
+      // Remove strokes in reverse order to avoid index issues
       for (let i = strokesToRemove.length - 1; i >= 0; i--) {
         canvasState.strokes.splice(strokesToRemove[i], 1);
       }
       
-      // Diffuser la suppression à tous les clients
+      // Broadcast removal to all clients
       io.emit('strokes-removed', { removedIndices: strokesToRemove });
-      console.log('🧽 Eraser a supprimé', strokesToRemove.length, 'strokes');
+      console.log('🧽 Eraser removed', strokesToRemove.length, 'strokes');
     } else {
-      // Ajouter à l'historique
+      // Add to history
       canvasState.strokes.push({
         ...stroke,
         timestamp: Date.now(),
-        id: Date.now() + Math.random() // ID unique
+        id: Date.now() + Math.random() // Unique ID
       });
       
-      // Nettoyer les anciens strokes si nécessaire
+      // Clean up old strokes if necessary
       cleanupOldStrokes();
       
-      // Diffuser aux autres clients
+      // Broadcast to other clients
       socket.broadcast.emit('stroke-added', stroke);
     }
   });
   
-  // 2.5. Écouter les segments en temps réel
+  // 2.5. Listen for real-time segments
   socket.on('stroke-segment', (segment) => {
     socketLastActivity.set(socket.id, Date.now());
     
-    // Validation du segment
+    // Segment validation
     if (!segment || !segment.from || !segment.to) {
       return;
     }
     
-    // Diffuser immédiatement aux autres clients
+    // Broadcast immediately to other clients
     socket.broadcast.emit('stroke-segment', segment);
   });
   
-  // 3. Gestion des curseurs
+  // 3. Cursor management
   socket.on('cursorMove', (cursorData) => {
     socketLastActivity.set(socket.id, Date.now());
     
     if (cursorData && cursorData.uuid) {
-      // Unicité du curseur : si un autre socket utilise déjà ce uuid, on le déconnecte
+      // Cursor uniqueness: if another socket is already using this uuid, disconnect it
       for (const [otherSocketId, otherUuid] of socketIdToUuid.entries()) {
         if (otherUuid === cursorData.uuid && otherSocketId !== socket.id) {
           const otherSocket = io.sockets.sockets.get(otherSocketId);
@@ -216,15 +224,15 @@ io.on('connection', (socket) => {
     }
   });
   
-  // 4. Effacer le canvas
+  // 4. Clear canvas
   socket.on('clear-canvas', () => {
     socketLastActivity.set(socket.id, Date.now());
     canvasState.strokes = [];
     io.emit('canvas-cleared');
-    console.log('🧹 Canvas effacé par', socket.id);
+    console.log('🧹 Canvas cleared by', socket.id);
   });
   
-  // 5. Demande d'état (pour les reconnexions)
+  // 5. State request (for reconnections)
   socket.on('request-state', () => {
     socketLastActivity.set(socket.id, Date.now());
     socket.emit('canvas-state', {
@@ -232,17 +240,17 @@ io.on('connection', (socket) => {
       totalStrokes: canvasState.strokes.length,
       maxStrokes: canvasState.maxStrokes
     });
-    console.log('📤 État renvoyé à', socket.id);
+    console.log('📤 State sent to', socket.id);
   });
   
-  // 6. Demande d'historique pour fit to content
+  // 6. History request for fit to content
   socket.on('requestDrawingHistory', () => {
     socketLastActivity.set(socket.id, Date.now());
     socket.emit('drawingHistory', canvasState.strokes);
-    console.log('📤 Historique envoyé à', socket.id, ':', canvasState.strokes.length, 'strokes');
+    console.log('📤 History sent to', socket.id, ':', canvasState.strokes.length, 'strokes');
   });
   
-  // 7. Statistiques
+  // 7. Statistics
   socket.on('get-stats', () => {
     socketLastActivity.set(socket.id, Date.now());
     socket.emit('stats', {
@@ -270,18 +278,18 @@ io.on('connection', (socket) => {
     socketHeartbeats.delete(socket.id);
     socketLastActivity.delete(socket.id);
     
-    console.log('🔴 Client déconnecté:', socket.id, '| Raison:', reason, '| Clients restants:', io.engine.clientsCount - 1);
+    console.log('🔴 Client disconnected:', socket.id, '| Reason:', reason, '| Remaining clients:', io.engine.clientsCount - 1);
   });
   
   socket.on('error', (error) => {
-    console.error('❌ Erreur socket pour', socket.id, ':', error);
+    console.error('❌ Socket error for', socket.id, ':', error);
     socket.disconnect(true);
   });
 });
 
 // Sauvegarder avant de quitter
 process.on('SIGINT', async () => {
-  console.log('💾 Sauvegarde avant arrêt...');
+  console.log('💾 Saving before shutdown...');
   await saveHistory();
   process.exit(0);
 });
@@ -289,19 +297,19 @@ process.on('SIGINT', async () => {
 // Nettoyage périodique (toutes les 5 minutes)
 setInterval(() => {
   cleanupOldStrokes();
-  console.log('📊 État actuel:', canvasState.strokes.length, '/', canvasState.maxStrokes, 'strokes');
-  console.log('👥 Utilisateurs actifs:', connectedUsers.size);
-  console.log('🔗 Sockets connectés:', io.engine.clientsCount);
+  console.log('📊 Current state:', canvasState.strokes.length, '/', canvasState.maxStrokes, 'strokes');
+  console.log('👥 Active users:', connectedUsers.size);
+  console.log('🔗 Connected sockets:', io.engine.clientsCount);
 }, 5 * 60 * 1000);
 
-server.listen(3000, async () => {
+server.listen(process.env.PORT || 3000, '0.0.0.0', async () => {
   await loadHistory();
-  console.log('🚀 Serveur démarré sur port 3000');
+  console.log('🚀 Server started on port', process.env.PORT || 3000);
   console.log('📊 Configuration:');
-  console.log('   - Limite strokes:', canvasState.maxStrokes);
-  console.log('   - Sauvegarde:', '30 secondes');
-  console.log('   - Nettoyage:', 'automatique');
-  console.log('   - Historique chargé:', canvasState.strokes.length, 'strokes');
-  console.log('   - Gestion curseurs:', 'activée');
-  console.log('   - Nettoyage utilisateurs:', 'activé');
+  console.log('   - Stroke limit:', canvasState.maxStrokes);
+  console.log('   - Save interval:', '30 seconds');
+  console.log('   - Cleanup:', 'automatic');
+  console.log('   - History loaded:', canvasState.strokes.length, 'strokes');
+  console.log('   - Cursor management:', 'enabled');
+  console.log('   - User cleanup:', 'enabled');
 }); 
