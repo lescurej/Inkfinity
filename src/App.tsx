@@ -32,6 +32,7 @@ const ControlsFixed = styled.div`
 
 const App: React.FC = () => {
   const [hasAppliedUrlParams, setHasAppliedUrlParams] = useState(false)
+  const [canvasStateLoaded, setCanvasStateLoaded] = useState(false)
   const canvasStore = useCanvasStore()
 
   useEffect(() => {
@@ -48,14 +49,54 @@ const App: React.FC = () => {
       const scale = z ? parseFloat(z) : undefined
       
       if (!isNaN(xCoord) && !isNaN(yCoord)) {
+        console.log('🎯 QR coordinates detected:', { x: xCoord, y: yCoord, scale })
+        
+        // Wait for canvas state to be loaded before applying coordinates
+        const applyCoordinates = () => {
+          if (canvasStateLoaded) {
+            console.log('✅ Canvas state loaded, applying coordinates')
+            canvasStore.navigateToCoordinates(xCoord, yCoord, scale)
+            window.dispatchEvent(new CustomEvent('coordinates-applied'))
+            setHasAppliedUrlParams(true)
+          } else {
+            console.log('⏳ Waiting for canvas state...')
+            // Retry after a shorter delay
+            setTimeout(applyCoordinates, 20)
+          }
+        }
+        
+        // Start checking after shorter initial delay
+        setTimeout(applyCoordinates, 50)
+        
+        // Fallback: apply coordinates after 1 second even if canvas state not loaded
         setTimeout(() => {
-          canvasStore.navigateToCoordinates(xCoord, yCoord, scale)
-        }, 100)
+          if (!hasAppliedUrlParams) {
+            console.log('⚠️ Fallback: applying coordinates without canvas state')
+            canvasStore.navigateToCoordinates(xCoord, yCoord, scale)
+            window.dispatchEvent(new CustomEvent('coordinates-applied'))
+            setHasAppliedUrlParams(true)
+          }
+        }, 1000)
+      } else {
+        setHasAppliedUrlParams(true)
       }
+    } else {
+      setHasAppliedUrlParams(true)
     }
+  }, [canvasStore, hasAppliedUrlParams, canvasStateLoaded])
+
+  // Listen for canvas state loaded event
+  useEffect(() => {
+    const handleCanvasStateLoaded = () => {
+      setCanvasStateLoaded(true)
+    }
+
+    window.addEventListener('canvas-state-loaded', handleCanvasStateLoaded)
     
-    setHasAppliedUrlParams(true)
-  }, [canvasStore, hasAppliedUrlParams])
+    return () => {
+      window.removeEventListener('canvas-state-loaded', handleCanvasStateLoaded)
+    }
+  }, [])
 
   useEffect(() => {
     // Empêche le swipe back/forward natif sur Mac (trackpad)

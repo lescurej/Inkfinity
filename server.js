@@ -24,13 +24,13 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
-// Stockage en mémoire avec limite de 2000 strokes
+// In-memory storage with limit of 2000 strokes
 const canvasState = {
   strokes: [],
   maxStrokes: 2000
 };
 
-// Gestion des utilisateurs connectés
+// Connected users management
 const connectedUsers = new Map();
 const socketIdToUuid = new Map();
 const socketHeartbeats = new Map();
@@ -38,14 +38,14 @@ const socketLastActivity = new Map();
 
 const HISTORY_FILE = './canvas-history.json';
 
-// Charger l'historique au démarrage
+// Load history on startup
 async function loadHistory() {
   try {
     const data = await fs.readFile(HISTORY_FILE, 'utf8');
     const history = JSON.parse(data);
     canvasState.strokes = history.strokes || [];
     
-    // S'assurer de ne pas dépasser la limite au chargement
+    // Ensure we don't exceed the limit when loading
     if (canvasState.strokes.length > canvasState.maxStrokes) {
       canvasState.strokes = canvasState.strokes.slice(-canvasState.maxStrokes);
       console.log('🧹 History truncated to', canvasState.maxStrokes, 'strokes');
@@ -57,7 +57,7 @@ async function loadHistory() {
   }
 }
 
-// Sauvegarder l'historique
+// Save history
 async function saveHistory() {
   try {
     const data = {
@@ -73,10 +73,10 @@ async function saveHistory() {
   }
 }
 
-// Sauvegarder toutes les 30 secondes
+// Save every 30 seconds
 setInterval(saveHistory, 30 * 1000);
 
-// Nettoyer les strokes les plus anciens si nécessaire
+// Clean up oldest strokes if necessary
 function cleanupOldStrokes() {
   if (canvasState.strokes.length > canvasState.maxStrokes) {
     const toRemove = canvasState.strokes.length - canvasState.maxStrokes;
@@ -111,7 +111,7 @@ function cleanupZombieConnections() {
   }
 }
 
-// Nettoyer les utilisateurs inactifs toutes les 10 secondes
+// Clean up inactive users every 10 seconds
 setInterval(cleanupZombieConnections, 30000);
 
 io.on('connection', (socket) => {
@@ -287,14 +287,14 @@ io.on('connection', (socket) => {
   });
 });
 
-// Sauvegarder avant de quitter
+// Save before quitting
 process.on('SIGINT', async () => {
   console.log('💾 Saving before shutdown...');
   await saveHistory();
   process.exit(0);
 });
 
-// Nettoyage périodique (toutes les 5 minutes)
+// Periodic cleanup (every 5 minutes)
 setInterval(() => {
   cleanupOldStrokes();
   console.log('📊 Current state:', canvasState.strokes.length, '/', canvasState.maxStrokes, 'strokes');

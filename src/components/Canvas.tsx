@@ -57,6 +57,8 @@ const Canvas: React.FC = () => {
   const [currentStroke, setCurrentStroke] = useState<{ x: number; y: number }[]>([])
   const [remoteUsers, setRemoteUsers] = useState<Map<string, { name: string; color: string }>>(new Map())
   const [pendingCanvasState, setPendingCanvasState] = useState<any>(null)
+  const [coordinatesApplied, setCoordinatesApplied] = useState(false)
+  const [coordinatesLoading, setCoordinatesLoading] = useState(false)
 
   const canvasStore = useCanvasStore()
   const {
@@ -141,10 +143,34 @@ const Canvas: React.FC = () => {
       fitToContentWithServer(emit, on, off)
     }
 
+    const handleCoordinatesApplied = () => {
+      console.log('🎯 Coordinates applied, enabling rendering')
+      setCoordinatesApplied(true)
+      setCoordinatesLoading(false)
+    }
+
+    // If no URL coordinates, allow immediate rendering
+    const urlParams = new URLSearchParams(window.location.search)
+    const hasUrlCoordinates = urlParams.get('x') && urlParams.get('y')
+    if (!hasUrlCoordinates) {
+      setCoordinatesApplied(true)
+    } else {
+      // Only show loading for a brief moment
+      setCoordinatesLoading(true)
+      // Auto-hide loading after 500ms to prevent stuck loading state
+      setTimeout(() => {
+        if (coordinatesLoading) {
+          setCoordinatesLoading(false)
+        }
+      }, 500)
+    }
+
     window.addEventListener('fitToContent', handleFitToContent)
+    window.addEventListener('coordinates-applied', handleCoordinatesApplied)
     
     return () => {
       window.removeEventListener('fitToContent', handleFitToContent)
+      window.removeEventListener('coordinates-applied', handleCoordinatesApplied)
     }
   }, [fitToContentWithServer, emit, on, off])
 
@@ -165,11 +191,27 @@ const Canvas: React.FC = () => {
     const graphics = drawingGraphicsRef.current
 
     const handleCanvasState = (data: any) => {
+      console.log('📦 Canvas state received:', data.strokes?.length || 0, 'strokes')
+      // Dispatch event to notify that canvas state is loaded immediately
+      window.dispatchEvent(new CustomEvent('canvas-state-loaded'))
+      
       if (!drawingGraphicsRef.current) {
+        console.log('⏳ Graphics not ready, storing pending state')
         setPendingCanvasState(data)
         return
       }
       
+      // Don't render strokes until coordinates are applied (unless no URL params)
+      const urlParams = new URLSearchParams(window.location.search)
+      const hasUrlCoordinates = urlParams.get('x') && urlParams.get('y')
+      
+      if (hasUrlCoordinates && !coordinatesApplied) {
+        console.log('⏳ Coordinates not applied yet, storing pending state')
+        setPendingCanvasState(data)
+        return
+      }
+      
+      console.log('🎨 Rendering strokes immediately')
       if (data.strokes) {
         data.strokes.forEach((stroke: any) => {
           if (stroke.points && stroke.points.length >= 2) {
@@ -285,6 +327,17 @@ const Canvas: React.FC = () => {
   // Apply pending canvas state when graphics become available
   useEffect(() => {
     if (pendingCanvasState && drawingGraphicsRef.current) {
+      // Dispatch event to notify that canvas state is loaded immediately
+      window.dispatchEvent(new CustomEvent('canvas-state-loaded'))
+      
+      // Don't render strokes until coordinates are applied (unless no URL params)
+      const urlParams = new URLSearchParams(window.location.search)
+      const hasUrlCoordinates = urlParams.get('x') && urlParams.get('y')
+      
+      if (hasUrlCoordinates && !coordinatesApplied) {
+        return
+      }
+      
       if (pendingCanvasState.strokes) {
         pendingCanvasState.strokes.forEach((stroke: any) => {
           if (stroke.points && stroke.points.length >= 2) {
@@ -316,7 +369,7 @@ const Canvas: React.FC = () => {
       }
       setPendingCanvasState(null)
     }
-  }, [pendingCanvasState, viewport.scale])
+  }, [pendingCanvasState, viewport.scale, coordinatesApplied])
 
   // Cursor emission
   useEffect(() => {
@@ -470,7 +523,7 @@ const Canvas: React.FC = () => {
         fontSize: '18px',
         color: '#666'
       }}>
-        Connexion au serveur...
+        Connecting to server...
       </div>
     )
   }
@@ -485,16 +538,34 @@ const Canvas: React.FC = () => {
         </StatsDisplay>
       )}
       
-      <CanvasContainer
+      <div 
         ref={canvasRef}
-        tabIndex={0}
+        className="canvas-container"
         onWheel={handleWheel}
         onMouseDown={handleCanvasMouseDown}
         onMouseUp={handleCanvasMouseUp}
         onMouseMove={handleCanvasMouseMove}
         onMouseLeave={handleCanvasMouseLeave}
-        style={{ touchAction: 'none' }}
+        style={{ position: 'relative' }}
       >
+        {coordinatesLoading && (
+          <div style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(240, 240, 240, 0.8)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            fontSize: '14px',
+            color: '#666'
+          }}>
+            Loading canvas...
+          </div>
+        )}
         <GridOverlay>
           <CanvasGrid viewport={{
             x: viewport.x,
@@ -504,7 +575,7 @@ const Canvas: React.FC = () => {
             height: window.innerHeight
           }} />
         </GridOverlay>
-      </CanvasContainer>
+      </div>
     </>
   )
 }
