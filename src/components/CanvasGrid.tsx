@@ -36,24 +36,29 @@ function randomSize(x: number, y: number) {
 const CanvasGrid: React.FC<CanvasGridProps> = ({ viewport }) => {
   const ref = useRef<HTMLCanvasElement>(null)
 
-  useEffect(() => {
+  const drawGrid = () => {
     const canvas = ref.current
     if (!canvas) return
+    
     const dpr = window.devicePixelRatio || 1
-    canvas.width = window.innerWidth * dpr
-    canvas.height = window.innerHeight * dpr
+    canvas.width = viewport.width * dpr
+    canvas.height = viewport.height * dpr
     canvas.style.width = '100vw'
     canvas.style.height = '100vh'
+    
     const ctx = canvas.getContext('2d')
     if (!ctx) return
+    
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     ctx.save()
     ctx.scale(dpr, dpr)
+    
     const step = GRID_SIZE * viewport.scale
     const startX = -((viewport.x * viewport.scale) % step)
     const startY = -((viewport.y * viewport.scale) % step)
-    for (let x = startX; x < window.innerWidth; x += step) {
-      for (let y = startY; y < window.innerHeight; y += step) {
+    
+    for (let x = startX; x < viewport.width; x += step) {
+      for (let y = startY; y < viewport.height; y += step) {
         const size = randomSize(Math.round((x - startX) / step), Math.round((y - startY) / step))
         ctx.beginPath()
         ctx.arc(x, y, size, 0, 2 * Math.PI)
@@ -62,6 +67,19 @@ const CanvasGrid: React.FC<CanvasGridProps> = ({ viewport }) => {
       }
     }
     ctx.restore()
+  }
+
+  useEffect(() => {
+    drawGrid()
+  }, [viewport.x, viewport.y, viewport.scale])
+
+  useEffect(() => {
+    const handleResize = () => {
+      drawGrid()
+    }
+
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
   }, [viewport.x, viewport.y, viewport.scale])
 
   return <GridCanvas ref={ref} />

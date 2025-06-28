@@ -1,11 +1,15 @@
-const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
-const fs = require('fs').promises;
-const path = require('path');
+import express from 'express';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
+import { promises as fs } from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
-const server = http.createServer(app);
+const server = createServer(app);
 const io = new Server(server, {
   cors: { origin: "*" },
   maxHttpBufferSize: 1e4,
@@ -130,7 +134,8 @@ io.on('connection', (socket) => {
   console.log('📤 State sent to', socket.id, ':', canvasState.strokes.length, 'strokes');
   
   // 2. Listen for new strokes
-  socket.on('draw', (stroke) => {
+  socket.on('strokeAdded', (stroke) => {
+    // console.log('SERVER: Received strokeAdded from', socket.id, stroke);
     socketLastActivity.set(socket.id, Date.now());
     
     // Stroke validation
@@ -183,12 +188,14 @@ io.on('connection', (socket) => {
       cleanupOldStrokes();
       
       // Broadcast to other clients
-      socket.broadcast.emit('stroke-added', stroke);
+      socket.broadcast.emit('strokeAdded', stroke);
+      console.log('SERVER: Broadcasted strokeAdded');
     }
   });
   
   // 2.5. Listen for real-time segments
-  socket.on('stroke-segment', (segment) => {
+  socket.on('strokeSegment', (segment) => {
+    console.log('SERVER: Received strokeSegment from', socket.id, segment);
     socketLastActivity.set(socket.id, Date.now());
     
     // Segment validation
@@ -197,7 +204,8 @@ io.on('connection', (socket) => {
     }
     
     // Broadcast immediately to other clients
-    socket.broadcast.emit('stroke-segment', segment);
+    socket.broadcast.emit('strokeSegment', segment);
+    console.log('SERVER: Broadcasted strokeSegment');
   });
   
   // 3. Cursor management

@@ -2,6 +2,7 @@
   "name": "inkfinity",
   "version": "2.0.0",
   "description": "Infinite collaborative canvas with React and PixiJS - 2000 strokes limit",
+  "type": "module",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

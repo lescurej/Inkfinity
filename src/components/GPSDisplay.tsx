@@ -68,6 +68,7 @@ const GPSDisplay: React.FC = () => {
   const { viewport } = useCanvasStore()
   const [qrCodeUrl, setQrCodeUrl] = useState<string>('')
   const [currentPositionUrl, setCurrentPositionUrl] = useState<string>('')
+  const [windowDimensions, setWindowDimensions] = useState({ width: window.innerWidth, height: window.innerHeight })
   
   const formatCoordinate = (value: number) => {
     const absValue = Math.abs(value)
@@ -79,8 +80,8 @@ const GPSDisplay: React.FC = () => {
     return `${direction}${degrees}°${minutes}'${seconds}"`
   }
   
-  const centerX = viewport.x + window.innerWidth / 2 / viewport.scale
-  const centerY = viewport.y + window.innerHeight / 2 / viewport.scale
+  const centerX = viewport.x + windowDimensions.width / 2 / viewport.scale
+  const centerY = viewport.y + windowDimensions.height / 2 / viewport.scale
   
   const handleQRCodeClick = async () => {
     try {
@@ -117,6 +118,15 @@ const GPSDisplay: React.FC = () => {
     
     generateQRCode()
   }, [centerX, centerY, viewport.scale])
+  
+  useEffect(() => {
+    const handleResize = () => {
+      setWindowDimensions({ width: window.innerWidth, height: window.innerHeight })
+    }
+
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
   
   return (
     <GPSContainer>

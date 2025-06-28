@@ -14,6 +14,13 @@ const AppContainer = styled.div`
   height: 100vh;
   overflow: hidden;
   position: relative;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  -khtml-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
 `
 
 const Overlay = styled.div`
@@ -51,7 +58,6 @@ const App: React.FC = () => {
       if (!isNaN(xCoord) && !isNaN(yCoord)) {
         console.log('🎯 QR coordinates detected:', { x: xCoord, y: yCoord, scale })
         
-        // Wait for canvas state to be loaded before applying coordinates
         const applyCoordinates = () => {
           if (canvasStateLoaded) {
             console.log('✅ Canvas state loaded, applying coordinates')
@@ -60,15 +66,12 @@ const App: React.FC = () => {
             setHasAppliedUrlParams(true)
           } else {
             console.log('⏳ Waiting for canvas state...')
-            // Retry after a shorter delay
             setTimeout(applyCoordinates, 20)
           }
         }
         
-        // Start checking after shorter initial delay
         setTimeout(applyCoordinates, 50)
         
-        // Fallback: apply coordinates after 1 second even if canvas state not loaded
         setTimeout(() => {
           if (!hasAppliedUrlParams) {
             console.log('⚠️ Fallback: applying coordinates without canvas state')
@@ -85,7 +88,6 @@ const App: React.FC = () => {
     }
   }, [canvasStore, hasAppliedUrlParams, canvasStateLoaded])
 
-  // Listen for canvas state loaded event
   useEffect(() => {
     const handleCanvasStateLoaded = () => {
       setCanvasStateLoaded(true)
@@ -99,7 +101,6 @@ const App: React.FC = () => {
   }, [])
 
   useEffect(() => {
-    // Empêche le swipe back/forward natif sur Mac (trackpad)
     const preventHorizontalScroll = (e: WheelEvent) => {
       if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
         e.preventDefault()
@@ -107,7 +108,7 @@ const App: React.FC = () => {
       }
     }
     window.addEventListener('wheel', preventHorizontalScroll, { passive: false })
-    // Empêche le zoom navigateur (pinch, ctrl/cmd+scroll, gesture)
+    
     const preventZoom = (e: any) => {
       if (
         (e.ctrlKey || e.metaKey) &&
@@ -128,11 +129,9 @@ const App: React.FC = () => {
   }, [])
 
   useEffect(() => {
-    // Bloque le scroll global de la page
     document.documentElement.style.overflow = 'hidden'
     document.body.style.overflow = 'hidden'
     
-    // Empêcher les gestes de navigation au niveau global
     document.documentElement.style.overscrollBehaviorX = 'none'
     document.documentElement.style.overscrollBehaviorY = 'none'
     document.body.style.overscrollBehaviorX = 'none'
@@ -149,7 +148,6 @@ const App: React.FC = () => {
   }, [])
 
   useEffect(() => {
-    // Empêche la navigation avec les raccourcis clavier
     const preventKeyboardNavigation = (e: KeyboardEvent) => {
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
         e.preventDefault()
@@ -164,11 +162,8 @@ const App: React.FC = () => {
   }, [])
 
   useEffect(() => {
-    // Empêche la navigation avec l'historique du navigateur
     const preventHistoryNavigation = (e: PopStateEvent) => {
-      // Empêcher la navigation en arrière/avant
       e.preventDefault()
-      // Recharger la page pour rester sur la même page
       window.location.reload()
     }
     
@@ -179,7 +174,6 @@ const App: React.FC = () => {
   }, [])
 
   useEffect(() => {
-    // Empêche la navigation du navigateur avec les gestes de trackpad - version robuste
     let startX = 0
     let startY = 0
     let isTracking = false
@@ -200,7 +194,6 @@ const App: React.FC = () => {
         const deltaX = Math.abs(touchEvent.touches[0].clientX - startX)
         const deltaY = Math.abs(touchEvent.touches[0].clientY - startY)
         
-        // Si le mouvement horizontal est dominant et significatif, empêcher la navigation
         if (deltaX > deltaY && deltaX > 30) {
           e.preventDefault()
           e.stopPropagation()
@@ -212,7 +205,6 @@ const App: React.FC = () => {
       isTracking = false
     }
     
-    // Empêcher les gestes de navigation sur tout le document
     document.addEventListener('touchstart', handleTouchStart, { passive: false })
     document.addEventListener('touchmove', handleTouchMove, { passive: false })
     document.addEventListener('touchend', handleTouchEnd, { passive: false })

@@ -1,5 +1,5 @@
-import create from 'zustand'
-import { useRef, useCallback, useEffect, useMemo, createContext, useContext, ReactNode } from 'react'
+import { create } from 'zustand'
+import { useRef, useCallback, useEffect, useMemo, createContext, useContext, ReactNode, useState } from 'react'
 import type { DrawingSegment, Point } from '../types'
 
 const CHUNK_SIZE = 1000
@@ -38,13 +38,13 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   isPanning: false,
   spacePressed: false,
   drawingChunks: new Map(),
-  setViewport: (v) => set(state => ({ viewport: { ...state.viewport, ...v } })),
-  setDrawing: (d) => set({ drawing: d }),
-  setLastPoint: (p) => set({ lastPoint: p }),
-  setMousePosition: (p) => set({ mousePosition: p }),
-  setIsPanning: (p) => set({ isPanning: p }),
-  setSpacePressed: (s) => set({ spacePressed: s }),
-  addSegmentToChunk: (seg) => {
+  setViewport: (v: Partial<Viewport>) => set((state: CanvasState) => ({ viewport: { ...state.viewport, ...v } })),
+  setDrawing: (d: boolean) => set({ drawing: d }),
+  setLastPoint: (p: Point | null) => set({ lastPoint: p }),
+  setMousePosition: (p: Point) => set({ mousePosition: p }),
+  setIsPanning: (p: boolean) => set({ isPanning: p }),
+  setSpacePressed: (s: boolean) => set({ spacePressed: s }),
+  addSegmentToChunk: (seg: DrawingSegment) => {
     const chunkKey = `${Math.floor(seg.x2 / CHUNK_SIZE)},${Math.floor(seg.y2 / CHUNK_SIZE)}`
     const map = new Map(get().drawingChunks)
     if (!map.has(chunkKey)) map.set(chunkKey, [])
@@ -57,7 +57,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     get().drawingChunks.forEach(chunk => segs.push(...chunk))
     return segs
   },
-  loadHistory: (history) => {
+  loadHistory: (history: DrawingSegment[]) => {
     const map = new Map()
     history.forEach(seg => {
       const chunkKey = `${Math.floor(seg.x2 / CHUNK_SIZE)},${Math.floor(seg.y2 / CHUNK_SIZE)}`

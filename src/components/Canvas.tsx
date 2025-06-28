@@ -59,6 +59,29 @@ const Canvas: React.FC = () => {
   const [pendingCanvasState, setPendingCanvasState] = useState<any>(null)
   const [coordinatesApplied, setCoordinatesApplied] = useState(false)
   const [coordinatesLoading, setCoordinatesLoading] = useState(false)
+  const [windowDimensions, setWindowDimensions] = useState({ width: window.innerWidth, height: window.innerHeight })
+  
+  const touchStateRef = useRef<{
+    isDrawing: boolean
+    isPanning: boolean
+    startX: number
+    startY: number
+    lastTouchX: number
+    lastTouchY: number
+    initialDistance: number
+    initialScale: number
+    worldAtStart?: { x: number; y: number } // Point | undefined
+  }>({
+    isDrawing: false,
+    isPanning: false,
+    startX: 0,
+    startY: 0,
+    lastTouchX: 0,
+    lastTouchY: 0,
+    initialDistance: 0,
+    initialScale: 1,
+    worldAtStart: undefined
+  })
 
   const canvasStore = useCanvasStore()
   const {
@@ -149,15 +172,12 @@ const Canvas: React.FC = () => {
       setCoordinatesLoading(false)
     }
 
-    // If no URL coordinates, allow immediate rendering
     const urlParams = new URLSearchParams(window.location.search)
     const hasUrlCoordinates = urlParams.get('x') && urlParams.get('y')
     if (!hasUrlCoordinates) {
       setCoordinatesApplied(true)
     } else {
-      // Only show loading for a brief moment
       setCoordinatesLoading(true)
-      // Auto-hide loading after 500ms to prevent stuck loading state
       setTimeout(() => {
         if (coordinatesLoading) {
           setCoordinatesLoading(false)
@@ -174,7 +194,6 @@ const Canvas: React.FC = () => {
     }
   }, [fitToContentWithServer, emit, on, off])
 
-  // Handle viewport changes
   useEffect(() => {
     const app = pixiAppRef.current
     if (!app) return
@@ -184,202 +203,143 @@ const Canvas: React.FC = () => {
     app.stage.y = -viewport.y * viewport.scale
   }, [viewport.x, viewport.y, viewport.scale])
 
+  // Handle window resize
+  useEffect(() => {
+    const handleResize = () => {
+      const app = pixiAppRef.current
+      if (!app) return
+      
+      app.renderer.resize(window.innerWidth, window.innerHeight)
+      
+      // Update window dimensions state
+      setWindowDimensions({ width: window.innerWidth, height: window.innerHeight })
+      
+      // Update viewport to maintain the same center point
+      const viewport = canvasStore.viewport
+      const centerX = viewport.x + window.innerWidth / 2 / viewport.scale
+      const centerY = viewport.y + window.innerHeight / 2 / viewport.scale
+      
+      canvasStore.setViewport({
+        x: centerX - window.innerWidth / 2 / viewport.scale,
+        y: centerY - window.innerHeight / 2 / viewport.scale
+      })
+    }
+
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [canvasStore])
+
   // Socket events
   useEffect(() => {
-    // Set to track already rendered stroke IDs
-    const renderedStrokeIds = new Set<string | number>()
-    const graphics = drawingGraphicsRef.current
+    const graphics = drawingGraphicsRef.current;
 
     const handleCanvasState = (data: any) => {
-      console.log('📦 Canvas state received:', data.strokes?.length || 0, 'strokes')
-      // Dispatch event to notify that canvas state is loaded immediately
-      window.dispatchEvent(new CustomEvent('canvas-state-loaded'))
-      
-      if (!drawingGraphicsRef.current) {
-        console.log('⏳ Graphics not ready, storing pending state')
-        setPendingCanvasState(data)
-        return
+      console.log('CLIENT: Received canvasState', data);
+      window.dispatchEvent(new CustomEvent('canvas-state-loaded'));
+      if (!graphics) {
+        console.log('⏳ Graphics not ready, storing pending state');
+        setPendingCanvasState(data);
+        return;
       }
-      
-      // Don't render strokes until coordinates are applied (unless no URL params)
-      const urlParams = new URLSearchParams(window.location.search)
-      const hasUrlCoordinates = urlParams.get('x') && urlParams.get('y')
-      
-      if (hasUrlCoordinates && !coordinatesApplied) {
-        console.log('⏳ Coordinates not applied yet, storing pending state')
-        setPendingCanvasState(data)
-        return
-      }
-      
-      console.log('🎨 Rendering strokes immediately')
-      if (data.strokes) {
+      graphics.clear();
+      if (data.strokes && Array.isArray(data.strokes)) {
         data.strokes.forEach((stroke: any) => {
           if (stroke.points && stroke.points.length >= 2) {
-            const size = stroke.size * viewport.scale
-            
-            if (stroke.brush === 'eraser') {
-              const eraserGraphics = eraserGraphicsRef.current
-              if (eraserGraphics) {
-                eraserGraphics.beginFill(0xFFFFFF, 1)
-                for (let i = 0; i < stroke.points.length; i++) {
-                  eraserGraphics.drawCircle(stroke.points[i].x, stroke.points[i].y, size / 2)
-                }
-                eraserGraphics.endFill()
-              }
-            } else {
-              const graphics = drawingGraphicsRef.current
-              if (graphics) {
-                const color = PIXI.Color.shared.setValue(stroke.color || '#000').toNumber()
-                graphics.lineStyle(size, color, 1)
-                graphics.blendMode = PIXI.BLEND_MODES.NORMAL
-                graphics.moveTo(stroke.points[0].x, stroke.points[0].y)
-                for (let i = 1; i < stroke.points.length; i++) {
-                  graphics.lineTo(stroke.points[i].x, stroke.points[i].y)
-                }
-              }
-            }
-          }
-        })
-      }
-    }
-    
-    const handleStrokeAdded = (stroke: any) => {
-      if (stroke.points && stroke.points.length >= 2) {
-        const size = stroke.size * viewport.scale
-        
-        if (stroke.brush === 'eraser') {
-          const eraserGraphics = eraserGraphicsRef.current
-          if (eraserGraphics) {
-            eraserGraphics.beginFill(0xFFFFFF, 1)
-            for (let i = 0; i < stroke.points.length; i++) {
-              eraserGraphics.drawCircle(stroke.points[i].x, stroke.points[i].y, size / 2)
-            }
-            eraserGraphics.endFill()
-          }
-        } else {
-          const graphics = drawingGraphicsRef.current
-          if (graphics) {
-            const color = PIXI.Color.shared.setValue(stroke.color || '#000').toNumber()
-            graphics.lineStyle(size, color, 1)
-            graphics.blendMode = PIXI.BLEND_MODES.NORMAL
-            graphics.moveTo(stroke.points[0].x, stroke.points[0].y)
-            
+            const color = PIXI.Color.shared.setValue(stroke.color).toNumber();
+            const size = stroke.size * viewport.scale;
+            graphics.lineStyle(size, color, 1);
+            graphics.moveTo(stroke.points[0].x, stroke.points[0].y);
             for (let i = 1; i < stroke.points.length; i++) {
-              graphics.lineTo(stroke.points[i].x, stroke.points[i].y)
+              graphics.lineTo(stroke.points[i].x, stroke.points[i].y);
             }
           }
+        });
+      }
+    };
+
+    const handleStrokeAdded = (stroke: any) => {
+      console.log('CLIENT: Received strokeAdded', stroke)
+      const graphics = drawingGraphicsRef.current
+      if (graphics && stroke.points && stroke.points.length >= 2) {
+        const color = PIXI.Color.shared.setValue(stroke.color).toNumber()
+        const size = stroke.size * viewport.scale
+        graphics.lineStyle(size, color, 1)
+        graphics.moveTo(stroke.points[0].x, stroke.points[0].y)
+        for (let i = 1; i < stroke.points.length; i++) {
+          graphics.lineTo(stroke.points[i].x, stroke.points[i].y)
         }
       }
     }
-    
+
     const handleStrokeSegment = (segment: any) => {
-      if (segment.from && segment.to) {
+      console.log('CLIENT: Received strokeSegment', segment)
+      const graphics = drawingGraphicsRef.current
+      if (graphics && segment.from && segment.to) {
+        const color = PIXI.Color.shared.setValue(segment.color).toNumber()
         const size = segment.size * viewport.scale
-        
-        if (segment.brush === 'eraser') {
-          // For eraser segments, we'll let the server handle the redrawing
-          // This ensures proper erasing that allows repainting
-        } else {
-          const graphics = drawingGraphicsRef.current
-          if (graphics) {
-            graphics.blendMode = PIXI.BLEND_MODES.NORMAL
-            const color = PIXI.Color.shared.setValue(segment.color || '#000').toNumber()
-            graphics.lineStyle(size, color, 1)
-            graphics.moveTo(segment.from.x, segment.from.y)
-            graphics.lineTo(segment.to.x, segment.to.y)
-          }
-        }
+        graphics.lineStyle(size, color, 1)
+        graphics.moveTo(segment.from.x, segment.from.y)
+        graphics.lineTo(segment.to.x, segment.to.y)
       }
     }
-    
+
     const handleCanvasCleared = () => {
-      const graphics = drawingGraphicsRef.current
       if (graphics) {
         graphics.clear()
       }
     }
-    
+
     const handleStrokesRemoved = () => {
-      // Redraw the entire canvas when strokes are removed
-      const graphics = drawingGraphicsRef.current
       if (graphics) {
         graphics.clear()
-        // Request the full canvas state to redraw
-        emit('request-state')
       }
     }
-    
+
     on('canvas-state', handleCanvasState)
-    on('stroke-added', handleStrokeAdded)
-    on('stroke-segment', handleStrokeSegment)
+    on('strokeAdded', handleStrokeAdded)
+    on('strokeSegment', handleStrokeSegment)
     on('canvas-cleared', handleCanvasCleared)
     on('strokes-removed', handleStrokesRemoved)
-    
+
     return () => {
       off('canvas-state', handleCanvasState)
-      off('stroke-added', handleStrokeAdded)
-      off('stroke-segment', handleStrokeSegment)
+      off('strokeAdded', handleStrokeAdded)
+      off('strokeSegment', handleStrokeSegment)
       off('canvas-cleared', handleCanvasCleared)
       off('strokes-removed', handleStrokesRemoved)
     }
   }, [on, off, viewport.scale])
 
-  // Apply pending canvas state when graphics become available
   useEffect(() => {
     if (pendingCanvasState && drawingGraphicsRef.current) {
-      // Dispatch event to notify that canvas state is loaded immediately
-      window.dispatchEvent(new CustomEvent('canvas-state-loaded'))
-      
-      // Don't render strokes until coordinates are applied (unless no URL params)
-      const urlParams = new URLSearchParams(window.location.search)
-      const hasUrlCoordinates = urlParams.get('x') && urlParams.get('y')
-      
-      if (hasUrlCoordinates && !coordinatesApplied) {
-        return
-      }
-      
-      if (pendingCanvasState.strokes) {
-        pendingCanvasState.strokes.forEach((stroke: any) => {
+      // Apply pending canvas state as soon as graphics are ready
+      const graphics = drawingGraphicsRef.current;
+      graphics.clear();
+      const data = pendingCanvasState;
+      if (data.strokes && Array.isArray(data.strokes)) {
+        data.strokes.forEach((stroke: any) => {
           if (stroke.points && stroke.points.length >= 2) {
-            const size = stroke.size * viewport.scale
-            
-            if (stroke.brush === 'eraser') {
-              const eraserGraphics = eraserGraphicsRef.current
-              if (eraserGraphics) {
-                eraserGraphics.beginFill(0xFFFFFF, 1)
-                for (let i = 0; i < stroke.points.length; i++) {
-                  eraserGraphics.drawCircle(stroke.points[i].x, stroke.points[i].y, size / 2)
-                }
-                eraserGraphics.endFill()
-              }
-            } else {
-              const graphics = drawingGraphicsRef.current
-              if (graphics) {
-                const color = PIXI.Color.shared.setValue(stroke.color || '#000').toNumber()
-                graphics.lineStyle(size, color, 1)
-                graphics.blendMode = PIXI.BLEND_MODES.NORMAL
-                graphics.moveTo(stroke.points[0].x, stroke.points[0].y)
-                for (let i = 1; i < stroke.points.length; i++) {
-                  graphics.lineTo(stroke.points[i].x, stroke.points[i].y)
-                }
-              }
+            const color = PIXI.Color.shared.setValue(stroke.color).toNumber();
+            const size = stroke.size * viewport.scale;
+            graphics.lineStyle(size, color, 1);
+            graphics.moveTo(stroke.points[0].x, stroke.points[0].y);
+            for (let i = 1; i < stroke.points.length; i++) {
+              graphics.lineTo(stroke.points[i].x, stroke.points[i].y);
             }
           }
-        })
+        });
       }
-      setPendingCanvasState(null)
+      setPendingCanvasState(null);
     }
-  }, [pendingCanvasState, viewport.scale, coordinatesApplied])
+  }, [pendingCanvasState, viewport.scale]);
 
-  // Cursor emission
   useEffect(() => {
-    const worldPos = screenToWorld(mousePosition.x, mousePosition.y)
     const cursorData = {
       uuid: myUUID,
-      x: worldPos.x,
-      y: worldPos.y,
-      size: getBrushSizeInPixels(),
+      x: mousePosition.x,
+      y: mousePosition.y,
       color: brushColor,
+      size: getBrushSizeInPixels(),
       brush: brushType
     }
     emit('cursorMove', cursorData)
@@ -472,8 +432,6 @@ const Canvas: React.FC = () => {
         const graphics = drawingGraphicsRef.current
         if (graphics) {
           if (brushType === 'eraser') {
-            // For eraser, we'll just emit the segment and let the server handle it
-            // The server will redraw the canvas without the erased areas
           } else {
             const color = PIXI.Color.shared.setValue(brushColor).toNumber()
             graphics.lineStyle(size, color, 1)
@@ -492,7 +450,8 @@ const Canvas: React.FC = () => {
             brush: brushType,
             uuid: myUUID
           }
-          emit('stroke-segment', segment)
+          console.log('CLIENT: Emitting strokeSegment', segment)
+          emit('strokeSegment', segment)
         }
       }
     }
@@ -502,16 +461,138 @@ const Canvas: React.FC = () => {
     handleMouseUp()
     if (currentStroke.length > 1) {
       const stroke = createStroke(currentStroke, brushColor, getBrushSizeInPixels(), brushType)
-      emit('draw', stroke)
+      console.log('CLIENT: Emitting strokeAdded', stroke)
+      emit('strokeAdded', stroke)
     }
     setCurrentStroke([])
     canvasStore.setLastPoint(null)
-  }, [handleMouseUp, currentStroke, brushColor, getBrushSizeInPixels, brushType, emit, canvasStore.setLastPoint])
+  }, [handleMouseUp, currentStroke, brushColor, getBrushSizeInPixels, brushType, emit, canvasStore])
 
   const handleCanvasMouseLeave = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     handleMouseLeave()
   }, [handleMouseLeave])
 
+  // Touch handlers
+  const getTouchDistance = useCallback((touches: React.TouchList) => {
+    if (touches.length < 2) return 0
+    const dx = touches[0].clientX - touches[1].clientX
+    const dy = touches[0].clientY - touches[1].clientY
+    return Math.sqrt(dx * dx + dy * dy)
+  }, [])
+
+  const getTouchCenter = useCallback((touches: React.TouchList) => {
+    if (touches.length === 0) return { x: 0, y: 0 }
+    if (touches.length === 1) {
+      return { x: touches[0].clientX, y: touches[0].clientY }
+    }
+    const x = (touches[0].clientX + touches[1].clientX) / 2
+    const y = (touches[0].clientY + touches[1].clientY) / 2
+    return { x, y }
+  }, [])
+
+  const handleTouchStart = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const touches = e.touches
+    
+    if (touches.length === 1) {
+      const touch = touches[0]
+      const { x, y } = screenToWorld(touch.clientX, touch.clientY)
+      
+      touchStateRef.current.isDrawing = true
+      touchStateRef.current.startX = touch.clientX
+      touchStateRef.current.startY = touch.clientY
+      touchStateRef.current.lastTouchX = touch.clientX
+      touchStateRef.current.lastTouchY = touch.clientY
+      
+      setCurrentStroke([{ x, y }])
+      canvasStore.setLastPoint({ x, y })
+      canvasStore.setDrawing(true)
+    } else if (touches.length === 2) {
+      touchStateRef.current.isPanning = true
+      touchStateRef.current.initialDistance = getTouchDistance(touches)
+      touchStateRef.current.initialScale = viewport.scale
+      touchStateRef.current.startX = getTouchCenter(touches).x
+      touchStateRef.current.startY = getTouchCenter(touches).y
+      const center = getTouchCenter(touches)
+      const worldAtStart = screenToWorld(center.x, center.y)
+      touchStateRef.current.worldAtStart = worldAtStart
+    }
+  }, [screenToWorld, canvasStore, getTouchDistance, getTouchCenter, viewport.scale])
+
+  const handleTouchMove = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const touches = e.touches
+    
+    if (touches.length === 1 && touchStateRef.current.isDrawing) {
+      const touch = touches[0]
+      const { x, y } = screenToWorld(touch.clientX, touch.clientY)
+      
+      const newStroke = [...currentStroke, { x, y }]
+      setCurrentStroke(newStroke)
+      canvasStore.setLastPoint({ x, y })
+      
+      if (newStroke.length >= 2) {
+        const size = getBrushSizeInPixels() * viewport.scale
+        
+        const graphics = drawingGraphicsRef.current
+        if (graphics && brushType !== 'eraser') {
+          const color = PIXI.Color.shared.setValue(brushColor).toNumber()
+          graphics.lineStyle(size, color, 1)
+          graphics.blendMode = PIXI.BLEND_MODES.NORMAL
+          graphics.moveTo(newStroke[newStroke.length - 2].x, newStroke[newStroke.length - 2].y)
+          graphics.lineTo(x, y)
+        }
+        
+        const segment = {
+          from: newStroke[newStroke.length - 2],
+          to: { x, y },
+          color: brushType === 'eraser' ? '#FFFFFF' : brushColor,
+          size: getBrushSizeInPixels(),
+          brush: brushType,
+          uuid: myUUID
+        }
+        console.log('CLIENT: Emitting strokeSegment', segment)
+        emit('strokeSegment', segment)
+      }
+    } else if (touches.length === 2 && touchStateRef.current.isPanning) {
+      const currentDistance = getTouchDistance(touches)
+      const currentCenter = getTouchCenter(touches)
+      if (touchStateRef.current.initialDistance > 0 && touchStateRef.current.worldAtStart) {
+        const scaleFactor = currentDistance / touchStateRef.current.initialDistance
+        const newScale = Math.max(0.1, Math.min(5, touchStateRef.current.initialScale * scaleFactor))
+        const worldAtStart = touchStateRef.current.worldAtStart
+        const newX = worldAtStart.x - (currentCenter.x / newScale)
+        const newY = worldAtStart.y - (currentCenter.y / newScale)
+        canvasStore.setViewport({
+          scale: newScale,
+          x: newX,
+          y: newY
+        })
+      }
+    }
+  }, [currentStroke, screenToWorld, canvasStore, getBrushSizeInPixels, viewport.scale, brushColor, brushType, emit, myUUID, getTouchDistance, getTouchCenter])
+
+  const handleTouchEnd = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    
+    if (touchStateRef.current.isDrawing && currentStroke.length > 1) {
+      const stroke = createStroke(currentStroke, brushColor, getBrushSizeInPixels(), brushType)
+      console.log('CLIENT: Emitting strokeAdded', stroke)
+      emit('strokeAdded', stroke)
+    }
+    
+    setCurrentStroke([])
+    canvasStore.setLastPoint(null)
+    canvasStore.setDrawing(false)
+    
+    touchStateRef.current.isDrawing = false
+    touchStateRef.current.isPanning = false
+    touchStateRef.current.initialDistance = 0
+    touchStateRef.current.worldAtStart = undefined
+  }, [currentStroke, brushColor, getBrushSizeInPixels, brushType, emit, canvasStore])
 
   if (isLoading) {
     return (
@@ -534,7 +615,7 @@ const Canvas: React.FC = () => {
         <StatsDisplay>
           <div>📊 Strokes: {stats.totalStrokes}/{stats.maxStrokes}</div>
           <div>👥 Clients: {stats.connectedClients}</div>
-          <div>💾 Mémoire: {stats.memoryUsage}</div>
+          <div>💾 Memory: {stats.memoryUsage}</div>
         </StatsDisplay>
       )}
       
@@ -546,6 +627,9 @@ const Canvas: React.FC = () => {
         onMouseUp={handleCanvasMouseUp}
         onMouseMove={handleCanvasMouseMove}
         onMouseLeave={handleCanvasMouseLeave}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
         style={{ position: 'relative' }}
       >
         {coordinatesLoading && (
@@ -571,8 +655,8 @@ const Canvas: React.FC = () => {
             x: viewport.x,
             y: viewport.y,
             scale: viewport.scale,
-            width: window.innerWidth,
-            height: window.innerHeight
+            width: windowDimensions.width,
+            height: windowDimensions.height
           }} />
         </GridOverlay>
       </div>
