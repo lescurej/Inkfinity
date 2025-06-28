@@ -2,20 +2,13 @@ services:
   - type: web
     name: inkfinity
     env: node
-    plan: free
-    buildCommand: npm install && npm run build
-    startCommand: npm start
+    plan: starter
+    buildCommand: pnpm install && pnpm run build
+    startCommand: pnpm start
     envVars:
       - key: NODE_ENV
         value: production
-      - key: STORAGE_TYPE
-        value: mongodb
-      - key: MONGODB_URI
-        fromDatabase:
-          name: inkfinity-mongodb
-          property: connectionString
-
-databases:
-  - name: inkfinity-mongodb
-    databaseName: inkfinity
-    plan: free 
+      - key: HOST
+        value: 0.0.0.0
+      - key: PORT
+        value: 3000 

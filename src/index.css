@@ -1,36 +1,40 @@
-* {
+/* Only keep resets and critical styles not handled by Emotion */
+html, body, #root {
   margin: 0;
   padding: 0;
+  width: 100vw;
+  height: 100vh;
   box-sizing: border-box;
-}
-
-html, body {
-  margin: 0;
   overflow: hidden;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  height: 100vh;
-  width: 100vw;
 }
 
-#root {
-  height: 100vh;
-  width: 100vw;
+body {
+  background: #f0f0f0;
+  font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
 }
 
 .canvas-container {
-  position: relative;
+  position: relative !important;
   width: 100vw;
   height: 100vh;
   background: #f0f0f0;
-  cursor: none;
+  cursor: none !important;
+  touch-action: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
 }
 
 .canvas-container:active {
   cursor: grabbing;
+}
+
+.canvas-grid-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
 }
 
 .grid {
@@ -42,6 +46,8 @@ html, body {
   background-size: 50px 50px;
   width: 100%;
   height: 100%;
+  top: 0;
+  left: 0;
 }
 
 .controls {
@@ -114,21 +120,45 @@ html, body {
 }
 
 .cursor-preview {
-  position: fixed;
+  position: absolute;
   pointer-events: none;
-  z-index: 2000;
-  opacity: 0.4;
+  z-index: 100;
+  opacity: 0.8;
   mix-blend-mode: multiply;
   transition: background 0.1s, border 0.1s;
   border-radius: 50%;
-  border: 1.5px solid #222;
+  border: 2px solid #222;
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  box-shadow: 0 0 6px rgba(0,0,0,0.5);
 }
 
 .remote-cursor {
-  position: fixed;
+  position: absolute;
   pointer-events: none;
-  z-index: 2100;
-  opacity: 0.5;
+  z-index: 1000;
+  opacity: 0.8;
   border-radius: 50%;
-  border: 2px solid #fff;
+  border: 2px solid white;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  transition: all 0.1s ease;
+}
+
+.remote-cursor:hover {
+  opacity: 1;
+  transform: scale(1.1);
+}
+
+/* Masquer le curseur système sur les boutons et contrôles */
+.controls button,
+.controls input,
+.controls select {
+  cursor: pointer !important;
+}
+
+/* Permettre le curseur système sur les éléments interactifs */
+button, input, select, a, [role="button"] {
+  cursor: pointer !important;
 } 

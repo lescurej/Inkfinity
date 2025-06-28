@@ -1,33 +1,42 @@
 {
   "name": "inkfinity",
   "version": "2.0.0",
-  "description": "Canvas collaboratif infini avec React et PixiJS",
+  "description": "Infinite collaborative canvas with React and PixiJS - 2000 strokes limit",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "concurrently \"pnpm run server\" \"pnpm run client\"",
-    "server": "node server.js",
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "server": "nodemon server.js",
     "client": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "postinstall": "pnpm run build"
+    "postinstall": "npm run build"
   },
   "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@jaames/iro": "^5.5.2",
     "@pixi/react": "^7.1.1",
     "express": "^4.18.2",
-    "pixi.js": "^7.3.2",
+    "nanoid": "^5.1.5",
+    "perfect-freehand": "^1.2.2",
+    "pixi.js": "^7.4.3",
+    "qrcode": "^1.5.4",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "socket.io": "^4.7.2",
     "socket.io-client": "^4.8.1",
-    "mongoose": "^8.0.3",
-    "dotenv": "^16.0.0"
+    "zustand": "^5.0.6"
   },
   "devDependencies": {
+    "@types/node": "^24.0.7",
+    "@types/qrcode": "^1.5.5",
     "@types/react": "^18.2.43",
     "@types/react-dom": "^18.2.17",
     "@vitejs/plugin-react": "^4.2.1",
     "concurrently": "^8.2.2",
+    "nodemon": "^3.1.10",
+    "typescript": "^5.8.3",
     "vite": "^5.0.8"
   },
   "engines": {
@@ -39,7 +48,9 @@
     "collaborative",
     "drawing",
     "react",
-    "pixijs"
+    "pixijs",
+    "websocket",
+    "2000-strokes"
   ],
   "author": "Johan Lescure",
   "license": "MIT"

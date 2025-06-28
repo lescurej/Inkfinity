@@ -1,44 +1,44 @@
-# Inkfinity - Canvas Collaboratif Infini
+# Inkfinity - Infinite Collaborative Canvas
 
-Un canvas collaboratif infini en temps réel avec React, PixiJS et Socket.IO.
+An infinite real-time collaborative canvas built with React, PixiJS, and Socket.IO.
 
-## 🚀 Fonctionnalités
+## 🚀 Features
 
-- **Canvas infini** : Zoom et pan illimités avec virtualisation
-- **Collaboration temps réel** : Dessin synchronisé entre tous les utilisateurs
-- **Curseurs distants** : Voir les curseurs des autres utilisateurs en temps réel
-- **Brushes avancés** : 7 types de pinceaux différents (rond, calligraphique, crayon, marqueur, gomme, rainbow, pattern)
-- **Rendu WebGL** : Performance optimale avec PixiJS
-- **Interface moderne** : Interface React responsive et intuitive
-- **Stockage persistant** : Support MongoDB pour la persistance des données
+- **Infinite canvas**: Unlimited zoom and pan with virtualization
+- **Real-time collaboration**: Synchronized drawing between all users
+- **Remote cursors**: See other users' cursors in real time
+- **Advanced brushes**: 7 different brush types (round, calligraphic, pencil, marker, eraser, rainbow, pattern)
+- **WebGL rendering**: Optimal performance with PixiJS
+- **Modern interface**: Responsive, intuitive React UI
+- **Persistent storage**: Automatic saving to a JSON file
 
 ## 🛠️ Technologies
 
-- **Frontend** : React 18, Vite, PixiJS
-- **Backend** : Node.js, Express, Socket.IO
-- **Base de données** : MongoDB avec Mongoose
-- **Package Manager** : pnpm
-- **Déploiement** : Render.com
+- **Frontend**: React 18, Vite, PixiJS
+- **Backend**: Node.js, Express, Socket.IO
+- **Storage**: JSON file with automatic saving
+- **Package Manager**: pnpm
+- **Deployment**: Render.com
 
 ## 📦 Installation
 
-### Prérequis
+### Prerequisites
 - Node.js >= 18.0.0
-- pnpm (recommandé) ou npm
+- pnpm (recommended) or npm
 
-### Installation avec pnpm (recommandé)
+### Installation with pnpm (recommended)
 ```bash
-# Installer pnpm globalement
+# Install pnpm globally
 npm install -g pnpm
 
-# Cloner le projet
+# Clone the project
 git clone <repository-url>
 cd Inkfinity
 
-# Installer les dépendances
+# Install dependencies
 pnpm install
 
-# Développement
+# Development
 pnpm dev
 
 # Production
@@ -46,16 +46,16 @@ pnpm build
 pnpm start
 ```
 
-### Installation avec npm
+### Installation with npm
 ```bash
-# Cloner le projet
+# Clone the project
 git clone <repository-url>
 cd Inkfinity
 
-# Installer les dépendances
+# Install dependencies
 npm install
 
-# Développement
+# Development
 npm run dev
 
 # Production
@@ -63,149 +63,127 @@ npm run build
 npm start
 ```
 
-## 🎮 Utilisation
+## 🎮 Usage
 
 ### Navigation
-- **Trackpad** : Déplacer le canvas
-- **Molette** : Zoom in/out
-- **Ctrl+Clic** : Pan manuel
+- **Trackpad**: Move the canvas
+- **Mouse wheel**: Zoom in/out
+- **Ctrl+Click**: Manual pan
 
-### Outils de dessin
-- **Couleur** : Sélecteur de couleur
-- **Taille** : Slider de 1 à 20 pixels
-- **Type de brush** : 7 styles différents
-- **Effacer** : Bouton pour vider tout le canvas
+### Drawing tools
+- **Color**: Color picker
+- **Size**: Slider from 1 to 20 pixels
+- **Brush type**: 7 different styles
+- **Clear**: Button to clear the entire canvas
 
 ## 🏗️ Architecture
 
 ```
 src/
-├── components/          # Composants React
-│   ├── Canvas.jsx      # Canvas principal avec PixiJS
-│   ├── Controls.jsx    # Panneau de contrôles
-│   ├── CursorPreview.jsx # Aperçu du curseur
-│   ├── Coordinates.jsx # Affichage des coordonnées
-│   ├── RemoteCursors.jsx # Curseurs des autres utilisateurs
-│   └── Status.jsx      # Statut de connexion
-├── hooks/              # Hooks personnalisés
-│   ├── useCanvas.js    # Logique du canvas
-│   ├── useBrush.js     # Gestion des brushes
-│   └── useSocket.js    # Communication Socket.IO
-├── utils/              # Utilitaires
-│   └── uuid.js         # Génération d'UUID
-├── App.jsx             # Composant principal
-├── main.jsx            # Point d'entrée
-└── index.css           # Styles globaux
+├── components/          # React components
+│   ├── Canvas.tsx      # Main canvas with PixiJS
+│   ├── Controls.tsx    # Controls panel
+│   ├── CursorPreview.tsx # Cursor preview
+│   ├── GPSDisplay.tsx  # Coordinates display
+│   ├── RemoteCursors.tsx # Other users' cursors
+│   └── CanvasGrid.tsx  # Reference grid
+├── hooks/              # Custom hooks
+│   ├── useCanvas.tsx   # Canvas logic
+│   ├── useBrush.tsx    # Brush management
+│   ├── useCanvasSocket.ts # Socket.IO communication
+│   └── useUUID.tsx     # UUID generation
+├── store/              # Global state
+│   └── canvasStore.ts  # Zustand store
+├── utils/              # Utilities
+│   ├── brushEngine.ts  # Brush engine
+│   └── uuid.ts         # UUID generation
+├── App.tsx             # Main component
+├── main.tsx            # Entry point
+└── index.css           # Global styles
 ```
 
 ## 🔧 Configuration
 
-### Variables d'environnement
+### Environment variables (optional)
 
-Copier `env.example` vers `.env` et configurer :
+The project works out of the box. To customize:
 
 ```bash
-# Configuration du serveur
+# Server configuration (optional)
 PORT=3000
 HOST=localhost
-
-# Type de stockage (memory ou mongodb)
-STORAGE_TYPE=memory
-
-# Configuration MongoDB (requis si STORAGE_TYPE=mongodb)
-MONGODB_URI=mongodb://localhost:27017/inkfinity
 ```
 
-### Configuration locale MongoDB
+### Automatic configuration
+
+- **Port**: 3000 by default (configurable via PORT)
+- **Storage**: `canvas-history.json` file with auto-save every 30 seconds
+- **Memory limit**: 2000 strokes maximum in memory
+- **Cleanup**: Automatic removal of oldest strokes
+
+## 🚀 Deployment on Render.com
+
+### Automatic deployment
+
+1. Push the code to GitHub
+2. Connect the repository to Render
+3. Render will automatically detect the `render.yaml` file
+4. Deployment will be automatic
+
+### Render environment variables
+
+- `PORT`: Automatically set by Render
+- `NODE_ENV`: `production` (automatic)
+
+## 📝 Available scripts
 
 ```bash
-# Installer MongoDB localement
-# macOS avec Homebrew
-brew install mongodb-community
-
-# Démarrer MongoDB
-brew services start mongodb-community
-
-# Ou utiliser MongoDB Atlas (cloud)
-```
-
-## 🚀 Déploiement sur Render.com
-
-### Méthode 1 : Déploiement automatique avec render.yaml
-
-1. Pousser le code sur GitHub
-2. Connecter le repository à Render
-3. Render détectera automatiquement le fichier `render.yaml`
-4. Le déploiement se fera automatiquement avec MongoDB
-
-### Méthode 2 : Déploiement manuel
-
-1. **Créer un nouveau Web Service sur Render**
-   - Connecter le repository GitHub
-   - Build Command : `npm install && npm run build`
-   - Start Command : `npm start`
-
-2. **Créer une base de données MongoDB**
-   - Créer un nouveau service MongoDB
-   - Copier l'URI de connexion
-
-3. **Configurer les variables d'environnement**
-   ```
-   NODE_ENV=production
-   STORAGE_TYPE=mongodb
-   MONGODB_URI=<URI_DE_TA_BASE_DE_DONNEES>
-   ```
-
-4. **Déployer**
-   - Render buildera et déploiera automatiquement
-
-### Variables d'environnement Render
-
-- `PORT` : Automatiquement défini par Render
-- `NODE_ENV` : `production`
-- `STORAGE_TYPE` : `mongodb`
-- `MONGODB_URI` : Fourni par Render lors de la création de la base de données
-
-## 📝 Scripts disponibles
-
-```bash
-# Développement
-pnpm dev          # Lance le serveur + client en mode dev
-pnpm server       # Lance uniquement le serveur
-pnpm client       # Lance uniquement le client Vite
+# Development
+pnpm dev          # Start server + client in dev mode
+pnpm server       # Start only the server
+pnpm client       # Start only the Vite client
 
 # Production
-pnpm build        # Build l'application React
-pnpm start        # Lance le serveur de production
-pnpm preview      # Preview du build local
+pnpm build        # Build the React app
+pnpm start        # Start the production server
+pnpm preview      # Preview the local build
 
 # Installation
-pnpm install      # Installe les dépendances
+pnpm install      # Install dependencies
 ```
 
-## 🔍 Développement
+## 🔍 Development
 
-### Structure des données MongoDB
+### Data structure
 
 ```javascript
 {
-  x1: Number,        // Coordonnée X du point de départ
-  y1: Number,        // Coordonnée Y du point de départ
-  x2: Number,        // Coordonnée X du point d'arrivée
-  y2: Number,        // Coordonnée Y du point d'arrivée
-  color: String,     // Couleur du trait (hex)
-  size: Number,      // Taille du pinceau
-  brush: String,     // Type de brush
-  timestamp: Date    // Timestamp de création
+  points: [           // Stroke points
+    { x: Number, y: Number },
+    { x: Number, y: Number }
+  ],
+  color: String,      // Stroke color (hex)
+  size: Number,       // Brush size
+  brush: String,      // Brush type
+  timestamp: Number,  // Creation timestamp
+  id: String         // Unique stroke ID
 }
 ```
 
-### Ajout de nouveaux types de brush
+### Real-time synchronization
 
-1. Ajouter le type dans `src/components/Controls.jsx`
-2. Implémenter le rendu dans `src/components/Canvas.jsx`
-3. Tester avec différents paramètres
+- **WebSocket**: Instant bidirectional communication
+- **Broadcast**: Each stroke is sent to all connected clients
+- **Full state**: New users receive the complete history
+- **Persistence**: Automatic saving every 30 seconds
 
-## 📝 Licence
+### Performance
 
-MIT License - Voir le fichier LICENSE pour plus de détails. 
+- **Memory limit**: 2000 strokes max to prevent overload
+- **Automatic cleanup**: Oldest strokes are removed
+- **WebGL**: Optimized rendering with PixiJS
+- **Compression**: Optimized data for network transmission
+
+## 📝 License
+
+MIT License - See the LICENSE file for details. 
