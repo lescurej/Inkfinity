@@ -19,7 +19,7 @@ const Toolbar = styled.div`
   padding: 4px 8px;
   display: flex;
   flex-direction: row;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
   border: 1px solid rgba(220,220,220,0.5);
   min-width: 0;
@@ -35,10 +35,9 @@ const Toolbar = styled.div`
     transform: none;
     bottom: 6px;
     padding: 2px 4px;
-    gap: 4px;
+    gap: 3px;
     height: 48px;
     border-radius: 7px;
-    justify-content: space-between;
   }
 `
 
@@ -79,6 +78,7 @@ const ColorSection = styled.div`
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
 `
 
 const ColorPickerContainer = styled.div`
@@ -146,13 +146,18 @@ const ColorPreviewButton = styled.button<{ color: string }>`
 const SizeSection = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
   align-items: center;
+  flex: 1;
+  min-width: 0;
+  @media (max-width: 600px) {
+    gap: 2px;
+  }
 `
 
 const SizeSlider = styled.div`
   position: relative;
-  width: 56px;
+  width: 100%;
   height: 28px;
   background: rgba(255,255,255,0.8);
   border-radius: 6px;
@@ -161,7 +166,6 @@ const SizeSlider = styled.div`
   padding: 0 4px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.04);
   @media (max-width: 600px) {
-    width: 90px;
     height: 36px;
     border-radius: 7px;
     padding: 0 6px;
@@ -225,10 +229,14 @@ const SizeDisplay = styled.div`
 const ToolSection = styled.div`
   display: flex;
   flex-direction: row;
-  gap: 8px;
+  gap: 4px;
   align-items: center;
   justify-content: center;
   height: 100%;
+  flex-shrink: 0;
+  @media (max-width: 600px) {
+    gap: 2px;
+  }
 `
 
 const ToolSelect = styled.div`
@@ -311,7 +319,11 @@ const Divider = styled.div`
   width: 1px;
   height: 40px;
   background: rgba(0,0,0,0.1);
-  margin: 0 8px;
+  margin: 0 4px;
+  flex-shrink: 0;
+  @media (max-width: 600px) {
+    margin: 0 2px;
+  }
 `
 
 const TOOLS = [
@@ -335,8 +347,9 @@ const ColorPopover = styled.div`
 const ZoomControls = styled.div`
   display: flex;
   flex-direction: row;
-  gap: 4px;
+  gap: 2px;
   align-items: center;
+  flex-shrink: 0;
   @media (max-width: 600px) {
     display: none;
   }
@@ -347,8 +360,9 @@ const MobileOnly = styled.div`
   @media (max-width: 600px) {
     display: flex;
     flex-direction: row;
-    gap: 4px;
+    gap: 2px;
     align-items: center;
+    flex-shrink: 0;
   }
 `
 
