@@ -287,6 +287,12 @@ const Canvas: React.FC = () => {
       if (graphics) {
         graphics.clear()
       }
+      
+      // Clear all remote cursors
+      remoteCursorsRef.current.forEach((cursorContainer) => {
+        cursorContainer.destroy()
+      })
+      remoteCursorsRef.current.clear()
     }
 
     const handleStrokesRemoved = () => {

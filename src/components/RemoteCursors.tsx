@@ -109,9 +109,17 @@ const RemoteCursors: React.FC = () => {
         }))
       }
     }
+    
+    const handleCanvasCleared = () => {
+      setRemoteCursors({})
+    }
+    
     on('remoteCursor', handleRemoteCursor)
+    on('canvas-cleared', handleCanvasCleared)
+    
     return () => {
       off('remoteCursor', handleRemoteCursor)
+      off('canvas-cleared', handleCanvasCleared)
     }
   }, [on, off, myUUID])
 
