@@ -352,7 +352,11 @@ const MobileOnly = styled.div`
   }
 `
 
-const Controls: React.FC = () => {
+interface ControlsProps {
+  showClearButton?: boolean
+}
+
+const Controls: React.FC<ControlsProps> = ({ showClearButton = false }) => {
   const { brushColor, brushSizePercent, updateBrushColor, updateBrushSize, brushType, updateBrushType } = useBrush()
   const { emit, on, off } = useSocket()
   const myUUID = useUUID()
@@ -362,6 +366,7 @@ const Controls: React.FC = () => {
   const [colorOpen, setColorOpen] = useState(false)
   const colorBtnRef = useRef<HTMLButtonElement>(null)
   const colorPopoverRef = useRef<HTMLDivElement>(null)
+  const [isClearing, setIsClearing] = useState(false)
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -404,8 +409,20 @@ const Controls: React.FC = () => {
   }, [colorOpen])
 
   const handleClearCanvas = () => {
-    clearChunks()
-    emit('clear-canvas')
+    if (isClearing) return
+    
+    console.log('🧹 Clear canvas button clicked')
+    setIsClearing(true)
+    
+    try {
+      clearChunks()
+      emit('clear-canvas')
+      console.log('🧹 Clear canvas event emitted')
+    } catch (error) {
+      console.error('❌ Error clearing canvas:', error)
+    } finally {
+      setTimeout(() => setIsClearing(false), 1000)
+    }
   }
 
   const handleFitToContent = () => {
@@ -419,7 +436,16 @@ const Controls: React.FC = () => {
     <>
       <Toolbar>
         <ToolSection>
-          <ToolButton onClick={handleClearCanvas} title="Clear Canvas">🧹</ToolButton>
+          {showClearButton && (
+            <ToolButton 
+              onClick={handleClearCanvas} 
+              title="Clear Canvas"
+              disabled={isClearing}
+              style={{ opacity: isClearing ? 0.5 : 1 }}
+            >
+              {isClearing ? '⏳' : '🧹'}
+            </ToolButton>
+          )}
         </ToolSection>
         <Divider />
         <ColorSection>

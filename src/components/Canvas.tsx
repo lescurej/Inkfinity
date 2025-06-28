@@ -60,6 +60,7 @@ const Canvas: React.FC = () => {
   const [coordinatesApplied, setCoordinatesApplied] = useState(false)
   const [coordinatesLoading, setCoordinatesLoading] = useState(false)
   const [windowDimensions, setWindowDimensions] = useState({ width: window.innerWidth, height: window.innerHeight })
+  const [canvasJustCleared, setCanvasJustCleared] = useState(false)
   
   const touchStateRef = useRef<{
     isDrawing: boolean
@@ -258,7 +259,6 @@ const Canvas: React.FC = () => {
     };
 
     const handleStrokeAdded = (stroke: any) => {
-      console.log('CLIENT: Received strokeAdded', stroke)
       const graphics = drawingGraphicsRef.current
       if (graphics && stroke.points && stroke.points.length >= 2) {
         const color = PIXI.Color.shared.setValue(stroke.color).toNumber()
@@ -272,7 +272,6 @@ const Canvas: React.FC = () => {
     }
 
     const handleStrokeSegment = (segment: any) => {
-      console.log('CLIENT: Received strokeSegment', segment)
       const graphics = drawingGraphicsRef.current
       if (graphics && segment.from && segment.to) {
         const color = PIXI.Color.shared.setValue(segment.color).toNumber()
@@ -284,15 +283,26 @@ const Canvas: React.FC = () => {
     }
 
     const handleCanvasCleared = () => {
-      if (graphics) {
-        graphics.clear()
+      console.log('🧹 Canvas cleared event received')
+      try {
+        if (graphics) {
+          graphics.clear()
+          console.log('🧹 Graphics cleared')
+        }
+        setPendingCanvasState(null)
+        setCurrentStroke([])
+        remoteCursorsRef.current.forEach((cursorContainer) => {
+          cursorContainer.destroy()
+        })
+        remoteCursorsRef.current.clear()
+        console.log('🧹 Remote cursors cleared')
+        // Force the store to empty to prevent redraw
+        canvasStore.loadHistory([])
+        canvasStore.clearChunks()
+        console.log('🧹 Canvas store cleared')
+      } catch (error) {
+        console.error('❌ Error clearing canvas:', error)
       }
-      
-      // Clear all remote cursors
-      remoteCursorsRef.current.forEach((cursorContainer) => {
-        cursorContainer.destroy()
-      })
-      remoteCursorsRef.current.clear()
     }
 
     const handleStrokesRemoved = () => {
@@ -314,7 +324,7 @@ const Canvas: React.FC = () => {
       off('canvas-cleared', handleCanvasCleared)
       off('strokes-removed', handleStrokesRemoved)
     }
-  }, [on, off, viewport.scale])
+  }, [on, off, viewport.scale, canvasStore])
 
   useEffect(() => {
     if (pendingCanvasState && drawingGraphicsRef.current) {
@@ -338,6 +348,21 @@ const Canvas: React.FC = () => {
       setPendingCanvasState(null);
     }
   }, [pendingCanvasState, viewport.scale]);
+
+  // Emit initial cursor position when component mounts or socket connects
+  useEffect(() => {
+    if (isConnected) {
+      const cursorData = {
+        uuid: myUUID,
+        x: mousePosition.x,
+        y: mousePosition.y,
+        color: brushColor,
+        size: getBrushSizeInPixels(),
+        brush: brushType
+      }
+      emit('cursorMove', cursorData)
+    }
+  }, [isConnected, myUUID, mousePosition.x, mousePosition.y, brushColor, getBrushSizeInPixels, brushType, emit])
 
   useEffect(() => {
     const cursorData = {
@@ -391,26 +416,55 @@ const Canvas: React.FC = () => {
       }
     }
     
-    const handleUserLeft = (data: any) => {
+    const handleUserConnect = (data: any) => {
+      if (data.uuid === myUUID) return
+      
+      const app = pixiAppRef.current
+      if (!app) return
+      
+      let cursorContainer = remoteCursorsRef.current.get(data.uuid)
+      if (!cursorContainer) {
+        cursorContainer = new PIXI.Container()
+        remoteCursorsRef.current.set(data.uuid, cursorContainer)
+        app.stage.addChild(cursorContainer)
+      }
+      
+      cursorContainer.x = data.x
+      cursorContainer.y = data.y
+      
+      cursorContainer.removeChildren()
+      
+      const cursor = new PIXI.Graphics()
+      const color = PIXI.Color.shared.setValue(data.color).toNumber()
+      cursor.lineStyle(2, color, 1)
+      cursor.drawCircle(0, 0, data.size)
+      cursorContainer.addChild(cursor)
+    }
+    
+    const handleUserDisconnect = (uuid: string) => {
+      if (uuid === myUUID) return
+      
       setRemoteUsers(prev => {
         const newMap = new Map(prev)
-        newMap.delete(data.uuid)
+        newMap.delete(uuid)
         return newMap
       })
       
-      const cursorContainer = remoteCursorsRef.current.get(data.uuid)
+      const cursorContainer = remoteCursorsRef.current.get(uuid)
       if (cursorContainer) {
         cursorContainer.destroy()
-        remoteCursorsRef.current.delete(data.uuid)
+        remoteCursorsRef.current.delete(uuid)
       }
     }
     
     on('remoteCursor', handleCursorMove)
-    on('userDisconnect', handleUserLeft)
+    on('userConnect', handleUserConnect)
+    on('userDisconnect', handleUserDisconnect)
     
     return () => {
       off('remoteCursor', handleCursorMove)
-      off('userDisconnect', handleUserLeft)
+      off('userConnect', handleUserConnect)
+      off('userDisconnect', handleUserDisconnect)
     }
   }, [on, off, myUUID])
 
@@ -505,6 +559,17 @@ const Canvas: React.FC = () => {
       const touch = touches[0]
       const { x, y } = screenToWorld(touch.clientX, touch.clientY)
       
+      // Emit cursor position for mobile
+      const cursorData = {
+        uuid: myUUID,
+        x: x,
+        y: y,
+        color: brushColor,
+        size: getBrushSizeInPixels(),
+        brush: brushType
+      }
+      emit('cursorMove', cursorData)
+      
       touchStateRef.current.isDrawing = true
       touchStateRef.current.startX = touch.clientX
       touchStateRef.current.startY = touch.clientY
@@ -534,6 +599,17 @@ const Canvas: React.FC = () => {
     if (touches.length === 1 && touchStateRef.current.isDrawing) {
       const touch = touches[0]
       const { x, y } = screenToWorld(touch.clientX, touch.clientY)
+      
+      // Emit cursor position for mobile
+      const cursorData = {
+        uuid: myUUID,
+        x: x,
+        y: y,
+        color: brushColor,
+        size: getBrushSizeInPixels(),
+        brush: brushType
+      }
+      emit('cursorMove', cursorData)
       
       const newStroke = [...currentStroke, { x, y }]
       setCurrentStroke(newStroke)

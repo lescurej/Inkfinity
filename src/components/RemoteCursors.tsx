@@ -64,14 +64,98 @@ const CurrentArtistLabel = styled.div`
   font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
   font-weight: 300;
   letter-spacing: 0.5px;
-  pointer-events: none;
+  pointer-events: auto;
   z-index: 1000;
   opacity: 0.6;
   transition: opacity 0.2s ease;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
   
   &:hover {
     opacity: 1;
+    background: rgba(255,255,255,0.8);
   }
+`
+
+const ArtistNameInput = styled.input`
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  font-size: 0.75rem;
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+  font-weight: 300;
+  letter-spacing: 0.5px;
+  background: rgba(255,255,255,0.95);
+  color: #000;
+  border: 1px solid rgba(0,0,0,0.3);
+  border-radius: 4px;
+  padding: 4px 8px;
+  outline: none;
+  z-index: 1001;
+  min-width: 120px;
+  
+  &:focus {
+    border-color: rgba(0,0,0,0.6);
+    box-shadow: 0 0 0 2px rgba(0,0,0,0.1);
+    background: rgba(255,255,255,1);
+  }
+  
+  &::placeholder {
+    color: rgba(0,0,0,0.5);
+  }
+`
+
+const ArtistNameLabel = styled.div`
+  position: fixed;
+  top: 14px;
+  left: 24px;
+  font-size: 0.68rem;
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+  font-weight: 400;
+  color: rgba(0,0,0,0.7);
+  z-index: 1002;
+  pointer-events: none;
+  letter-spacing: 0.3px;
+  user-select: none;
+  @media (max-width: 600px) {
+    top: 10px;
+    left: 12px;
+  }
+`
+
+const ArtistNameRow = styled.div`
+  position: fixed;
+  top: 32px;
+  left: 24px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  z-index: 1002;
+  cursor: pointer;
+  color: rgba(0,0,0,0.8);
+  font-size: 0.95rem;
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+  font-weight: 300;
+  letter-spacing: 0.5px;
+  opacity: 0.8;
+  transition: opacity 0.2s;
+  &:hover {
+    opacity: 1;
+    color: #222;
+  }
+  @media (max-width: 600px) {
+    top: 24px;
+    left: 12px;
+    font-size: 0.9rem;
+  }
+`
+
+const EditIcon = styled.span<{ hovered: boolean }>`
+  font-size: 1em;
+  margin-left: 2px;
+  opacity: ${props => (props.hovered ? 1 : 0.7)};
+  transition: opacity 0.2s;
 `
 
 const ARTISTS = [
@@ -96,9 +180,14 @@ function getArtistForUUID(uuid: string): string {
 
 const RemoteCursors: React.FC = () => {
   const [remoteCursors, setRemoteCursors] = useState<RemoteCursorMap>({})
+  const [isEditingName, setIsEditingName] = useState(false)
+  const [customArtistName, setCustomArtistName] = useState<string>('')
+  const [remoteArtistNames, setRemoteArtistNames] = useState<{[uuid: string]: string}>({})
   const myUUID = useUUID()
   const { viewport } = useCanvasStore()
-  const { on, off } = useSocket()
+  const { on, off, emit } = useSocket()
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [isHovered, setIsHovered] = useState(false)
 
   useEffect(() => {
     const handleRemoteCursor = (data: RemoteCursor & { size?: number; color?: string }) => {
@@ -110,34 +199,61 @@ const RemoteCursors: React.FC = () => {
       }
     }
     
+    const handleUserConnect = (data: RemoteCursor & { size?: number; color?: string }) => {
+      if (data.uuid && data.uuid !== myUUID) {
+        setRemoteCursors(prev => ({
+          ...prev,
+          [data.uuid]: { cursor: data, lastSeen: Date.now() }
+        }))
+      }
+    }
+    
+    const handleUserDisconnect = (uuid: string) => {
+      if (uuid !== myUUID) {
+        setRemoteCursors(prev => {
+          const newCursors = { ...prev }
+          delete newCursors[uuid]
+          return newCursors
+        })
+      }
+    }
+    
     const handleCanvasCleared = () => {
       setRemoteCursors({})
     }
     
+    const handleArtistNameChange = (data: { uuid: string; name: string }) => {
+      console.log('🎨 Received artistNameChange:', data)
+      if (data.uuid !== myUUID) {
+        setRemoteArtistNames(prev => ({
+          ...prev,
+          [data.uuid]: data.name
+        }))
+        console.log('🎨 Updated remote artist name for:', data.uuid, '->', data.name)
+      }
+    }
+    
     on('remoteCursor', handleRemoteCursor)
+    on('userConnect', handleUserConnect)
+    on('userDisconnect', handleUserDisconnect)
     on('canvas-cleared', handleCanvasCleared)
+    on('artistNameChange', handleArtistNameChange)
     
     return () => {
       off('remoteCursor', handleRemoteCursor)
+      off('userConnect', handleUserConnect)
+      off('userDisconnect', handleUserDisconnect)
       off('canvas-cleared', handleCanvasCleared)
+      off('artistNameChange', handleArtistNameChange)
     }
   }, [on, off, myUUID])
 
+  // Select all text when entering edit mode
   useEffect(() => {
-    const interval = setInterval(() => {
-      setRemoteCursors(prev => {
-        const now = Date.now()
-        const newCursors: RemoteCursorMap = {}
-        Object.entries(prev).forEach(([uuid, { cursor, lastSeen }]) => {
-          if (now - lastSeen < 100) {
-            newCursors[uuid] = { cursor, lastSeen }
-          }
-        })
-        return newCursors
-      })
-    }, 1000)
-    return () => clearInterval(interval)
-  }, [])
+    if (isEditingName && inputRef.current) {
+      inputRef.current.select()
+    }
+  }, [isEditingName])
 
   const visibleCursors = useMemo((): VisibleCursor[] => {
     const cursors = Object.values(remoteCursors)
@@ -167,11 +283,63 @@ const RemoteCursors: React.FC = () => {
     return cursors
   }, [remoteCursors, viewport.x, viewport.y, viewport.scale, myUUID])
 
+  const handleNameClick = () => {
+    setIsEditingName(true)
+    setCustomArtistName(getArtistForUUID(myUUID))
+  }
+
+  const handleNameSubmit = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      const newName = e.currentTarget.value.trim()
+      if (newName) {
+        setCustomArtistName(newName)
+        // Emit the new name to other users
+        const nameChangeData = { uuid: myUUID, name: newName }
+        console.log('🎨 Emitting artistNameChange:', nameChangeData)
+        emit('artistNameChange', nameChangeData)
+      }
+      setIsEditingName(false)
+    } else if (e.key === 'Escape') {
+      setIsEditingName(false)
+    }
+  }
+
+  const handleNameBlur = () => {
+    setIsEditingName(false)
+  }
+
+  const getDisplayName = (uuid: string) => {
+    if (uuid === myUUID) {
+      return customArtistName || getArtistForUUID(uuid)
+    }
+    // For remote users, we'll need to store their custom names
+    return remoteArtistNames[uuid] || getArtistForUUID(uuid)
+  }
+
   return (
     <>
-      <CurrentArtistLabel>
-        {getArtistForUUID(myUUID)}
-      </CurrentArtistLabel>
+      <ArtistNameLabel>Enter your name here:</ArtistNameLabel>
+      {isEditingName ? (
+        <ArtistNameInput
+          value={customArtistName}
+          onChange={(e) => setCustomArtistName(e.target.value)}
+          onKeyDown={handleNameSubmit}
+          onBlur={handleNameBlur}
+          autoFocus
+          placeholder="Enter your name here..."
+          ref={inputRef}
+          style={{ top: 32, left: 24, position: 'fixed', zIndex: 1003 }}
+        />
+      ) : (
+        <ArtistNameRow
+          onClick={handleNameClick}
+          onMouseEnter={() => setIsHovered(true)}
+          onMouseLeave={() => setIsHovered(false)}
+        >
+          {getDisplayName(myUUID)}
+          <EditIcon hovered={isHovered} title="Edit name">✏️</EditIcon>
+        </ArtistNameRow>
+      )}
       {visibleCursors.map(cursor => (
         <RemoteCursor
           key={cursor.uuid}
@@ -180,7 +348,7 @@ const RemoteCursors: React.FC = () => {
           color={cursor.color || '#00f'}
           size={cursor.size}
         >
-          <UUIDLabel>{getArtistForUUID(cursor.uuid)}</UUIDLabel>
+          <UUIDLabel>{getDisplayName(cursor.uuid)}</UUIDLabel>
         </RemoteCursor>
       ))}
     </>

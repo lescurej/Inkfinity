@@ -1,92 +1,42 @@
 import React, { useEffect, useState } from 'react'
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import Canvas from './components/Canvas'
 import Controls from './components/Controls'
 import CursorPreview from './components/CursorPreview'
 import RemoteCursors from './components/RemoteCursors'
+import CanvasGrid from './components/CanvasGrid'
 import GPSDisplay from './components/GPSDisplay'
 import { BrushProvider } from './hooks/useBrush'
 import { UUIDProvider } from './hooks/useUUID'
 import { useCanvasStore } from './store/canvasStore'
 import styled from '@emotion/styled'
+import './index.css'
 
 const AppContainer = styled.div`
+  position: relative;
   width: 100vw;
   height: 100vh;
   overflow: hidden;
-  position: relative;
-  touch-action: none;
-  -webkit-touch-callout: none;
-  -webkit-user-select: none;
-  -khtml-user-select: none;
-  -moz-user-select: none;
-  -ms-user-select: none;
-  user-select: none;
-`
-
-const Overlay = styled.div`
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 100;
+  background: #f0f0f0;
 `
 
 const ControlsFixed = styled.div`
   position: fixed;
-  top: 40px;
-  left: 40px;
-  z-index: 200;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  pointer-events: none;
+  
+  > * {
+    pointer-events: auto;
+  }
 `
 
-const App: React.FC = () => {
+const MainApp: React.FC = () => {
   const [hasAppliedUrlParams, setHasAppliedUrlParams] = useState(false)
   const [canvasStateLoaded, setCanvasStateLoaded] = useState(false)
-  const canvasStore = useCanvasStore()
-
-  useEffect(() => {
-    if (hasAppliedUrlParams) return
-    
-    const urlParams = new URLSearchParams(window.location.search)
-    const x = urlParams.get('x')
-    const y = urlParams.get('y')
-    const z = urlParams.get('z')
-    
-    if (x && y) {
-      const xCoord = parseFloat(x)
-      const yCoord = parseFloat(y)
-      const scale = z ? parseFloat(z) : undefined
-      
-      if (!isNaN(xCoord) && !isNaN(yCoord)) {
-        console.log('🎯 QR coordinates detected:', { x: xCoord, y: yCoord, scale })
-        
-        const applyCoordinates = () => {
-          if (canvasStateLoaded) {
-            console.log('✅ Canvas state loaded, applying coordinates')
-            canvasStore.navigateToCoordinates(xCoord, yCoord, scale)
-            window.dispatchEvent(new CustomEvent('coordinates-applied'))
-            setHasAppliedUrlParams(true)
-          } else {
-            console.log('⏳ Waiting for canvas state...')
-            setTimeout(applyCoordinates, 20)
-          }
-        }
-        
-        setTimeout(applyCoordinates, 50)
-        
-        setTimeout(() => {
-          if (!hasAppliedUrlParams) {
-            console.log('⚠️ Fallback: applying coordinates without canvas state')
-            canvasStore.navigateToCoordinates(xCoord, yCoord, scale)
-            window.dispatchEvent(new CustomEvent('coordinates-applied'))
-            setHasAppliedUrlParams(true)
-          }
-        }, 1000)
-      } else {
-        setHasAppliedUrlParams(true)
-      }
-    } else {
-      setHasAppliedUrlParams(true)
-    }
-  }, [canvasStore, hasAppliedUrlParams, canvasStateLoaded])
+  const { viewport } = useCanvasStore()
 
   useEffect(() => {
     const handleCanvasStateLoaded = () => {
@@ -94,11 +44,23 @@ const App: React.FC = () => {
     }
 
     window.addEventListener('canvas-state-loaded', handleCanvasStateLoaded)
-    
     return () => {
       window.removeEventListener('canvas-state-loaded', handleCanvasStateLoaded)
     }
   }, [])
+
+  useEffect(() => {
+    if (canvasStateLoaded && !hasAppliedUrlParams) {
+      const urlParams = new URLSearchParams(window.location.search)
+      const x = urlParams.get('x')
+      const y = urlParams.get('y')
+      const scale = urlParams.get('scale')
+
+      if (x && y && scale) {
+        setHasAppliedUrlParams(true)
+      }
+    }
+  }, [canvasStateLoaded, hasAppliedUrlParams])
 
   useEffect(() => {
     const preventHorizontalScroll = (e: WheelEvent) => {
@@ -216,22 +178,61 @@ const App: React.FC = () => {
     }
   }, [])
 
+  const gridViewport = {
+    ...viewport,
+    width: window.innerWidth,
+    height: window.innerHeight
+  }
+
   return (
-    <UUIDProvider>
-      <BrushProvider>
-        <AppContainer>
-          <Canvas />
-          <Overlay>
-            <RemoteCursors />
-            <CursorPreview />
-          </Overlay>
-          <ControlsFixed>
-            <Controls />
-          </ControlsFixed>
-          <GPSDisplay />
-        </AppContainer>
-      </BrushProvider>
-    </UUIDProvider>
+    <AppContainer>
+      <Canvas />
+      <ControlsFixed>
+        <Controls />
+      </ControlsFixed>
+      <RemoteCursors />
+      <CursorPreview />
+      <CanvasGrid viewport={gridViewport} />
+      <GPSDisplay />
+    </AppContainer>
+  )
+}
+
+const AdminPage: React.FC = () => {
+  const { viewport } = useCanvasStore()
+  
+  const gridViewport = {
+    ...viewport,
+    width: window.innerWidth,
+    height: window.innerHeight
+  }
+  
+  return (
+    <AppContainer>
+      <Canvas />
+      <ControlsFixed>
+        <Controls showClearButton={true} />
+      </ControlsFixed>
+      <RemoteCursors />
+      <CursorPreview />
+      <CanvasGrid viewport={gridViewport} />
+      <GPSDisplay />
+    </AppContainer>
+  )
+}
+
+const App: React.FC = () => {
+  return (
+    <BrushProvider>
+      <UUIDProvider>
+        <Router>
+          <Routes>
+            <Route path="/" element={<MainApp />} />
+            <Route path="/admin" element={<AdminPage />} />
+          </Routes>
+        </Router>
+      </UUIDProvider>
+    </BrushProvider>
   )
 }
 

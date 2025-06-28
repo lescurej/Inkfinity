@@ -39,6 +39,7 @@ const connectedUsers = new Map();
 const socketIdToUuid = new Map();
 const socketHeartbeats = new Map();
 const socketLastActivity = new Map();
+const lastClearTime = new Map();
 
 const HISTORY_FILE = './canvas-history.json';
 
@@ -91,26 +92,27 @@ function cleanupOldStrokes() {
 
 function cleanupZombieConnections() {
   const now = Date.now();
-  const heartbeatTimeout = 90000;
-  const activityTimeout = 120000;
+  const timeout = 30 * 1000; // 30 seconds timeout
   
-  for (const [socketId, lastHeartbeat] of socketHeartbeats.entries()) {
-    if (now - lastHeartbeat > heartbeatTimeout) {
-      const socket = io.sockets.sockets.get(socketId);
-      if (socket) {
-        console.log('🧟 Zombie connection detected, forcing disconnection:', socketId);
-        socket.disconnect(true);
-      }
-      socketHeartbeats.delete(socketId);
-      socketLastActivity.delete(socketId);
-    }
-  }
-  
-  for (const [uuid, lastActivity] of connectedUsers.entries()) {
-    if (now - lastActivity > activityTimeout) {
+  for (const [uuid, lastSeen] of connectedUsers.entries()) {
+    if (now - lastSeen > timeout) {
       connectedUsers.delete(uuid);
+      
+      // Find and remove the socket ID for this UUID
+      for (const [socketId, userUuid] of socketIdToUuid.entries()) {
+        if (userUuid === uuid) {
+          socketIdToUuid.delete(socketId);
+          const socket = io.sockets.sockets.get(socketId);
+          if (socket) {
+            socket.disconnect(true);
+          }
+          break;
+        }
+      }
+      
+      // Emit userDisconnect for the timed out user
       io.emit('userDisconnect', uuid);
-      console.log('🧹 Inactive user removed:', uuid);
+      console.log('🧟 Zombie user disconnected:', uuid);
     }
   }
 }
@@ -195,7 +197,6 @@ io.on('connection', (socket) => {
   
   // 2.5. Listen for real-time segments
   socket.on('strokeSegment', (segment) => {
-    console.log('SERVER: Received strokeSegment from', socket.id, segment);
     socketLastActivity.set(socket.id, Date.now());
     
     // Segment validation
@@ -205,7 +206,6 @@ io.on('connection', (socket) => {
     
     // Broadcast immediately to other clients
     socket.broadcast.emit('strokeSegment', segment);
-    console.log('SERVER: Broadcasted strokeSegment');
   });
   
   // 3. Cursor management
@@ -226,18 +226,54 @@ io.on('connection', (socket) => {
           break;
         }
       }
+      
+      // Check if this is a new user connection
+      const isNewUser = !connectedUsers.has(cursorData.uuid);
+      
       connectedUsers.set(cursorData.uuid, Date.now());
       socketIdToUuid.set(socket.id, cursorData.uuid);
+      
+      // Emit userConnect for new users
+      if (isNewUser) {
+        io.emit('userConnect', cursorData);
+      }
+      
       socket.broadcast.emit('remoteCursor', cursorData);
     }
   });
   
   // 4. Clear canvas
-  socket.on('clear-canvas', () => {
+  socket.on('clear-canvas', async () => {
+    const now = Date.now()
+    const lastClear = lastClearTime.get(socket.id) || 0
+    
+    // Prevent rapid clear requests (minimum 2 seconds between clears)
+    if (now - lastClear < 2000) {
+      console.log('⚠️ Clear canvas request ignored (too frequent) from', socket.id)
+      return
+    }
+    
+    console.log('🧹 Clear canvas request from', socket.id)
+    lastClearTime.set(socket.id, now)
+    
+    // Clear the strokes array
+    canvasState.strokes = []
+    
+    // Save the cleared state
+    await saveHistory()
+    
+    // Broadcast to all clients
+    io.emit('canvas-cleared')
+    console.log('🧹 Canvas cleared by', socket.id, '| Broadcasted to all clients')
+  })
+  
+  // 4.5. Artist name change
+  socket.on('artistNameChange', (data) => {
     socketLastActivity.set(socket.id, Date.now());
-    canvasState.strokes = [];
-    io.emit('canvas-cleared');
-    console.log('🧹 Canvas cleared by', socket.id);
+    if (data && data.uuid && data.name) {
+      io.emit('artistNameChange', data);
+      console.log('🎨 Artist name changed:', data.uuid, '->', data.name);
+    }
   });
   
   // 5. State request (for reconnections)
@@ -276,18 +312,19 @@ io.on('connection', (socket) => {
   });
   
   socket.on('disconnect', (reason) => {
-    const uuid = socketIdToUuid.get(socket.id);
+    const uuid = socketIdToUuid.get(socket.id)
     if (uuid) {
-      connectedUsers.delete(uuid);
-      io.emit('userDisconnect', uuid);
-      socketIdToUuid.delete(socket.id);
+      connectedUsers.delete(uuid)
+      io.emit('userDisconnect', uuid)
+      socketIdToUuid.delete(socket.id)
     }
     
-    socketHeartbeats.delete(socket.id);
-    socketLastActivity.delete(socket.id);
+    socketHeartbeats.delete(socket.id)
+    socketLastActivity.delete(socket.id)
+    lastClearTime.delete(socket.id)
     
-    console.log('🔴 Client disconnected:', socket.id, '| Reason:', reason, '| Remaining clients:', io.engine.clientsCount - 1);
-  });
+    console.log('🔴 Client disconnected:', socket.id, '| Reason:', reason, '| Remaining clients:', io.engine.clientsCount - 1)
+  })
   
   socket.on('error', (error) => {
     console.error('❌ Socket error for', socket.id, ':', error);
