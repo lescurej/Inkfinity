@@ -40,6 +40,7 @@ const Canvas: React.FC = () => {
   >([]);
   const [pendingCanvasState, setPendingCanvasState] = useState<any>(null);
   const [coordinatesLoading, setCoordinatesLoading] = useState(false);
+  const [graphicsReady, setGraphicsReady] = useState(false);
   const [windowDimensions, setWindowDimensions] = useState({
     width: window.innerWidth,
     height: window.innerHeight,
@@ -126,6 +127,7 @@ const Canvas: React.FC = () => {
       const drawingGraphics = new PIXI.Graphics();
       drawingContainer.addChild(drawingGraphics);
       drawingGraphicsRef.current = drawingGraphics;
+      setGraphicsReady(true);
 
       const remoteCursorsContainer = new PIXI.Container();
       app.stage.addChild(remoteCursorsContainer);
@@ -141,6 +143,7 @@ const Canvas: React.FC = () => {
         pixiAppRef.current = null;
         drawingGraphicsRef.current = null;
         eraserGraphicsRef.current = null;
+        setGraphicsReady(false);
       }
     };
   }, [canvasRef.current]);
@@ -305,7 +308,7 @@ const Canvas: React.FC = () => {
       off(EVENTS.CANVAS_CLEARED, handleCanvasCleared);
       off(EVENTS.STROKES_REMOVED, handleStrokesRemoved);
     };
-  }, [on, off, viewport.scale, canvasStore]);
+  }, [on, off, viewport.scale, canvasStore, graphicsReady]);
 
   useEffect(() => {
     if (pendingCanvasState && drawingGraphicsRef.current) {
