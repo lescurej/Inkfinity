@@ -155,7 +155,6 @@ const Canvas: React.FC = () => {
     };
 
     const handleCoordinatesApplied = () => {
-      console.log("🎯 Coordinates applied, enabling rendering");
       setCoordinatesLoading(false);
     };
 
@@ -226,10 +225,8 @@ const Canvas: React.FC = () => {
     const graphics = drawingGraphicsRef.current;
 
     const handleCanvasState = (data: any) => {
-      console.log("CLIENT: Received canvasState", data);
       window.dispatchEvent(new CustomEvent("canvas-state-loaded"));
       if (!graphics) {
-        console.log("⏳ Graphics not ready, storing pending state");
         setPendingCanvasState(data);
         return;
       }
@@ -274,19 +271,16 @@ const Canvas: React.FC = () => {
     };
 
     const handleCanvasCleared = () => {
-      console.log("🧹 Canvas cleared event received");
       try {
         if (graphics) {
           graphics.clear();
-          console.log("🧹 Graphics cleared");
         }
         setPendingCanvasState(null);
         setCurrentStroke([]);
-        console.log("🧹 Remote cursors cleared");
+
         // Force the store to empty to prevent redraw
         canvasStore.loadHistory([]);
         canvasStore.clearChunks();
-        console.log("🧹 Canvas store cleared");
       } catch (error) {
         console.error("❌ Error clearing canvas:", error);
       }

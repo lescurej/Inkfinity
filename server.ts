@@ -47,12 +47,20 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const server = createServer(app);
 
-app.use(compression());
-app.use(express.static(path.join(__dirname, 'dist')));
+const isDev = process.env.NODE_ENV !== 'production';
 
-app.get('*', (req: Request, res: Response) => {
-  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
-});
+if (isDev) {
+  // In dev, don't serve static files (Vite handles it)
+  app.use(compression());
+} else {
+  // In production, serve static files from dist
+  app.use(compression());
+  app.use(express.static(__dirname));
+  
+  app.get('*', (req: Request, res: Response) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+  });
+}
 
 const io = new Server(server, {
   cors: { 
@@ -112,7 +120,7 @@ async function loadHistory(): Promise<void> {
       canvasState.strokes = canvasState.strokes.slice(-canvasState.maxStrokes);
     }
   } catch (error) {
-    console.log('📚 No history file found, starting fresh');
+
   }
 }
 
@@ -277,7 +285,6 @@ io.on('connection', (socket: Socket) => {
     if (!isValidCursorData(cursorData)) return;
     
     if (cursorData.viewport && !isValidViewport(cursorData.viewport)) return;
-        console.log("🔍 cursor move:", cursorData);
     const validatedCursorData: CursorData = {
       ...cursorData,
       uuid: serverAssignedUUID
@@ -302,7 +309,6 @@ io.on('connection', (socket: Socket) => {
     if (cursorData.viewport) {
       userViewports.set(serverAssignedUUID, cursorData.viewport);
     }
-    console.log("🔍 remote cursor:", validatedCursorData);
     socket.broadcast.emit(EVENTS.REMOTE_CURSOR, validatedCursorData);
     socketLastActivity.set(socket.id, Date.now());
   });
@@ -381,15 +387,12 @@ const HOST = process.env.HOST || 'localhost';
 
 loadHistory().then(() => {
   server.listen(PORT, () => {
-    console.log(`🚀 Inkfinity server running on http://${HOST}:${PORT}`);
-    console.log(`📊 Max strokes: ${CONFIG.MAX_STROKES}`);
-    console.log(`💾 Auto-save every: ${CONFIG.SAVE_INTERVAL / 1000}s`);
-    console.log(`🧹 Cleanup every: ${CONFIG.HEARTBEAT_INTERVAL / 1000}s`);
+    
   });
 });
 
 process.on('SIGINT', async () => {
-  console.log('🛑 Shutting down server...');
+
   await saveHistory();
   process.exit(0);
 });

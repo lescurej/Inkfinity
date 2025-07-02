@@ -420,13 +420,11 @@ const Controls: React.FC<ControlsProps> = ({ showClearButton = false }) => {
   const handleClearCanvas = () => {
     if (isClearing) return;
 
-    console.log("🧹 Clear canvas button clicked");
     setIsClearing(true);
 
     try {
       clearChunks();
       emit("clear-canvas");
-      console.log("🧹 Clear canvas event emitted");
     } catch (error) {
       console.error("❌ Error clearing canvas:", error);
     } finally {
@@ -435,7 +433,6 @@ const Controls: React.FC<ControlsProps> = ({ showClearButton = false }) => {
   };
 
   const handleFitToContent = () => {
-    console.log("🔍 Fit to content button clicked");
     fitToContentWithServer(emit, on, off);
   };
 

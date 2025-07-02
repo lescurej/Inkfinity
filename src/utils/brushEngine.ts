@@ -50,7 +50,7 @@ export class BrushEngine {
     if (this.loaded) return
 
     // Skip texture loading for now - use fallback rendering only
-    // console.log('Brush engine initialized with fallback rendering only')
+
     
     this.setupDefaultConfigs()
     this.loaded = true

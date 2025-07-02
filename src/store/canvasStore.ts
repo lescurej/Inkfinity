@@ -174,13 +174,8 @@ export const useCanvasStore = create<CanvasState>((set: (fn: (state: CanvasState
     }))
   },
   fitToContentWithServer: (emit: any, on: any, off: any) => {
-    console.log('🔍 fitToContentWithServer called')
-    
     const handleDrawingHistory = (history: any[]) => {
-      console.log('🔍 Received drawing history:', history.length, 'strokes')
-      
       if (history.length === 0) {
-        console.log('🔍 No strokes found, resetting view')
         get().resetView()
         return
       }
@@ -197,8 +192,6 @@ export const useCanvasStore = create<CanvasState>((set: (fn: (state: CanvasState
           })
         }
       })
-      
-      console.log('🔍 Boundary box:', { minX, minY, maxX, maxY })
       
       let contentWidth = maxX - minX
       let contentHeight = maxY - minY
@@ -226,8 +219,6 @@ export const useCanvasStore = create<CanvasState>((set: (fn: (state: CanvasState
       const viewportX = centerX - window.innerWidth / 2 / scale
       const viewportY = centerY - window.innerHeight / 2 / scale
       
-      console.log('🔍 New viewport:', { x: viewportX, y: viewportY, scale })
-      
       set(state => ({
         ...state,
         viewport: {
@@ -241,14 +232,10 @@ export const useCanvasStore = create<CanvasState>((set: (fn: (state: CanvasState
     }
     
     on(EVENTS.DRAWING_HISTORY, handleDrawingHistory)
-    console.log('🔍 Requesting drawing history from server')
     emit(EVENTS.REQUEST_DRAWING_HISTORY)
   },
   fitToContentFromHistory: (history: any[]) => {
-    console.log('🔍 fitToContentFromHistory called with', history.length, 'strokes')
-    
     if (history.length === 0) {
-      console.log('🔍 No strokes found, resetting view')
       get().resetView()
       return
     }
@@ -265,8 +252,6 @@ export const useCanvasStore = create<CanvasState>((set: (fn: (state: CanvasState
         })
       }
     })
-    
-    console.log('🔍 Boundary box:', { minX, minY, maxX, maxY })
     
     let contentWidth = maxX - minX
     let contentHeight = maxY - minY
@@ -293,8 +278,6 @@ export const useCanvasStore = create<CanvasState>((set: (fn: (state: CanvasState
     const centerY = minY + contentHeight / 2
     const viewportX = centerX - window.innerWidth / 2 / scale
     const viewportY = centerY - window.innerHeight / 2 / scale
-    
-    console.log('🔍 New viewport:', { x: viewportX, y: viewportY, scale })
     
     set(state => ({
       ...state,

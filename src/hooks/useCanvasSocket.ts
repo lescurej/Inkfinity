@@ -62,7 +62,7 @@ const connectGlobal = () => {
 
   const serverUrl = window.location.origin;
   
-  console.log('🔗 Attempting to connect to server...');
+  
   
   globalSocket = io(serverUrl, {
     transports: ['websocket'],
@@ -74,7 +74,7 @@ const connectGlobal = () => {
   });
 
   addGlobalListener('connect', () => {
-    console.log('🔗 Connected to server');
+
     globalConnectionState.isConnected = true;
     globalConnectionState.isLoading = false;
     globalConnectionState.connectionAttempts = 0;
@@ -87,7 +87,7 @@ const connectGlobal = () => {
   });
 
   addGlobalListener('disconnect', (reason: string) => {
-    console.log('🔴 Disconnected from server:', reason);
+
     globalConnectionState.isConnected = false;
     cleanupGlobal();
     
@@ -106,25 +106,25 @@ const connectGlobal = () => {
   });
 
   addGlobalListener(EVENTS.PONG, () => {
-    console.log('💓 Heartbeat received');
+
   });
 
   addGlobalListener(EVENTS.STATS, (data: SocketStats) => {
     globalConnectionState.stats = data;
-    console.log('📊 Stats received:', data);
+
   });
 
   addGlobalListener(EVENTS.USER_DISCONNECT, (uuid: string) => {
-    console.log('👤 User disconnected:', uuid);
+
   });
 
   addGlobalListener(EVENTS.SESSION_INIT, (data: { uuid: string; name: string }) => {
-    console.log('🎨 Received session init:', data);
+
     // Update user store
     const { setUUID, setArtistName } = useUserStore.getState();
     setUUID(data.uuid);
     setArtistName(data.name);
-    console.log('🎨 Set UUID and artist name:', data.uuid, data.name);
+
   });
 };
 

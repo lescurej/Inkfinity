@@ -93,7 +93,6 @@ export const useRemoteCursors = () => {
     () => ({
       handleRemoteCursor: (data: CursorData) => {
         if (!isValidCursorData(data)) return;
-        console.log('[RemoteCursor] Received world coordinates:', data.x, data.y, 'from', data.uuid);
         debouncedCursorUpdate(data.uuid, data);
       },
 
