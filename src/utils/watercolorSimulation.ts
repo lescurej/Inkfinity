@@ -2,7 +2,6 @@ import * as PIXI from 'pixi.js'
 
 function getDeviceProfile() {
   const ua = navigator.userAgent
-  const ratio = window.devicePixelRatio || 1
   if (/iPhone/i.test(ua)) return { maxDabs: 800, blur: 2, name: 'iPhone' }
   if (/iPad/i.test(ua)) return { maxDabs: 1200, blur: 3, name: 'iPad' }
   return { maxDabs: 2000, blur: 4, name: 'desktop' }

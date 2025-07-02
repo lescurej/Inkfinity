@@ -1,10 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react'
-import styled from '@emotion/styled'
-import { useBrush } from '../hooks/useBrush'
-import { useSocket } from '../hooks/useSocket'
-import { useUUID } from '../hooks/useUUID'
-import { useCanvasStore } from '../store/canvasStore'
-import ColorPickerWheel from './ColorPickerWheel'
+import React, { useState, useEffect, useRef } from "react";
+import styled from "@emotion/styled";
+import { useBrush } from "../hooks/useBrush";
+import { useCanvasSocket } from "../hooks/useCanvasSocket";
+import { useCanvasStore } from "../store/canvasStore";
+import ColorPickerWheel from "./ColorPickerWheel";
 
 const Toolbar = styled.div`
   position: fixed;
@@ -12,16 +11,16 @@ const Toolbar = styled.div`
   left: 50%;
   transform: translateX(-50%);
   z-index: 200;
-  background: rgba(255,255,255,0.96);
+  background: rgba(255, 255, 255, 0.96);
   backdrop-filter: blur(12px);
   border-radius: 10px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   padding: 4px 8px;
   display: flex;
   flex-direction: row;
   gap: 6px;
   align-items: center;
-  border: 1px solid rgba(220,220,220,0.5);
+  border: 1px solid rgba(220, 220, 220, 0.5);
   min-width: 0;
   height: 40px;
   box-sizing: border-box;
@@ -39,10 +38,10 @@ const Toolbar = styled.div`
     height: 48px;
     border-radius: 7px;
   }
-`
+`;
 
 const ToolButton = styled.button`
-  background: rgba(255,255,255,0.8);
+  background: rgba(255, 255, 255, 0.8);
   color: #333;
   border: none;
   padding: 0;
@@ -50,7 +49,7 @@ const ToolButton = styled.button`
   cursor: pointer;
   font-size: 1rem;
   font-weight: 500;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
   transition: all 0.15s;
   display: flex;
   align-items: center;
@@ -61,7 +60,7 @@ const ToolButton = styled.button`
   min-height: 28px;
   &:hover {
     background: #f3f3f3;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.10);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
   }
   @media (max-width: 600px) {
     width: 22px;
@@ -71,7 +70,7 @@ const ToolButton = styled.button`
     font-size: 0.9rem;
     border-radius: 5px;
   }
-`
+`;
 
 const ColorSection = styled.div`
   position: relative;
@@ -79,49 +78,18 @@ const ColorSection = styled.div`
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-`
-
-const ColorPickerContainer = styled.div`
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
-  border: 1px solid #eee;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #fff;
-  @media (max-width: 600px) {
-    width: 22px;
-    height: 22px;
-    border-radius: 5px;
-  }
-`
-
-const ColorInput = styled.input`
-  width: 100%;
-  height: 100%;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  background: none;
-  padding: 0;
-  display: block;
-  position: static;
-  opacity: 1;
-`
+`;
 
 const ColorPreviewButton = styled.button<{ color: string }>`
-  background: ${props => props.color};
+  background: ${(props) => props.color};
   color: #333;
-  border: 2px solid rgba(255,255,255,0.8);
+  border: 2px solid rgba(255, 255, 255, 0.8);
   padding: 0;
   border-radius: 50%;
   cursor: pointer;
   font-size: 1rem;
   font-weight: 500;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   transition: all 0.15s;
   display: flex;
   align-items: center;
@@ -132,7 +100,7 @@ const ColorPreviewButton = styled.button<{ color: string }>`
   min-height: 28px;
   &:hover {
     transform: scale(1.05);
-    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
   }
   @media (max-width: 600px) {
     width: 22px;
@@ -141,7 +109,7 @@ const ColorPreviewButton = styled.button<{ color: string }>`
     min-height: 22px;
     font-size: 0.9rem;
   }
-`
+`;
 
 const SizeSection = styled.div`
   display: flex;
@@ -153,24 +121,24 @@ const SizeSection = styled.div`
   @media (max-width: 600px) {
     gap: 2px;
   }
-`
+`;
 
 const SizeSlider = styled.div`
   position: relative;
   width: 100%;
   height: 28px;
-  background: rgba(255,255,255,0.8);
+  background: rgba(255, 255, 255, 0.8);
   border-radius: 6px;
   display: flex;
   align-items: center;
   padding: 0 4px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
   @media (max-width: 600px) {
     height: 36px;
     border-radius: 7px;
     padding: 0 6px;
   }
-`
+`;
 
 const SizeInput = styled.input`
   width: 100%;
@@ -186,7 +154,7 @@ const SizeInput = styled.input`
     border-radius: 50%;
     background: #333;
     cursor: pointer;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.10);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   }
   &::-moz-range-thumb {
     width: 10px;
@@ -195,7 +163,7 @@ const SizeInput = styled.input`
     background: #333;
     cursor: pointer;
     border: none;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.10);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   }
   @media (max-width: 600px) {
     &::-webkit-slider-thumb {
@@ -208,14 +176,14 @@ const SizeInput = styled.input`
     }
     height: 8px;
   }
-`
+`;
 
 const SizeDisplay = styled.div`
   position: absolute;
   top: -28px;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(0,0,0,0.8);
+  background: rgba(0, 0, 0, 0.8);
   color: white;
   padding: 3px 7px;
   border-radius: 6px;
@@ -224,7 +192,7 @@ const SizeDisplay = styled.div`
   white-space: nowrap;
   pointer-events: none;
   z-index: 10;
-`
+`;
 
 const ToolSection = styled.div`
   display: flex;
@@ -237,7 +205,7 @@ const ToolSection = styled.div`
   @media (max-width: 600px) {
     gap: 2px;
   }
-`
+`;
 
 const ToolSelect = styled.div`
   position: relative;
@@ -250,13 +218,15 @@ const ToolSelect = styled.div`
     width: 28px;
     height: 28px;
   }
-`
+`;
 
 const ToolButtonWithPreview = styled.button<{ active: boolean }>`
   width: 28px;
   height: 28px;
-  background: ${props => props.active ? 'rgba(59,130,246,0.12)' : 'rgba(255,255,255,0.8)'};
-  border: ${props => props.active ? '2px solid rgba(59,130,246,0.4)' : '1px solid #eee'};
+  background: ${(props) =>
+    props.active ? "rgba(59,130,246,0.12)" : "rgba(255,255,255,0.8)"};
+  border: ${(props) =>
+    props.active ? "2px solid rgba(59,130,246,0.4)" : "1px solid #eee"};
   border-radius: 6px;
   cursor: pointer;
   font-size: 1.2rem;
@@ -271,29 +241,33 @@ const ToolButtonWithPreview = styled.button<{ active: boolean }>`
     font-size: 1rem;
     border-radius: 5px;
   }
-`
+`;
 
 const ToolDropdown = styled.div<{ open: boolean }>`
   position: absolute;
   bottom: 110%;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(255,255,255,0.98);
+  background: rgba(255, 255, 255, 0.98);
   backdrop-filter: blur(10px);
   border-radius: 10px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.10);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
   padding: 8px;
-  display: ${props => props.open ? 'grid' : 'none'};
+  display: ${(props) => (props.open ? "grid" : "none")};
   grid-template-columns: repeat(3, 1fr);
   gap: 6px;
   min-width: 120px;
   border: 1px solid #eee;
   z-index: 100;
-`
+`;
 
 const ToolOption = styled.button<{ active: boolean }>`
-  background: ${props => props.active ? 'rgba(59,130,246,0.1)' : 'rgba(255,255,255,0.8)'};
-  border: ${props => props.active ? '2px solid rgba(59,130,246,0.5)' : '1px solid rgba(0,0,0,0.1)'};
+  background: ${(props) =>
+    props.active ? "rgba(59,130,246,0.1)" : "rgba(255,255,255,0.8)"};
+  border: ${(props) =>
+    props.active
+      ? "2px solid rgba(59,130,246,0.5)"
+      : "1px solid rgba(0,0,0,0.1)"};
   border-radius: 8px;
   padding: 8px;
   cursor: pointer;
@@ -304,32 +278,47 @@ const ToolOption = styled.button<{ active: boolean }>`
   align-items: center;
   gap: 4px;
   &:hover {
-    background: rgba(255,255,255,1);
+    background: rgba(255, 255, 255, 1);
     transform: translateY(-1px);
   }
-`
+`;
 
 const ToolName = styled.span`
   font-size: 0.7rem;
   color: #666;
   text-align: center;
-`
+`;
 
 const Divider = styled.div`
   width: 1px;
   height: 40px;
-  background: rgba(0,0,0,0.1);
+  background: rgba(0, 0, 0, 0.1);
   margin: 0 4px;
   flex-shrink: 0;
   @media (max-width: 600px) {
     margin: 0 2px;
   }
-`
+`;
 
 const TOOLS = [
-  { id: 'round', name: 'Round', icon: <span style={{fontSize: '1.5em', color: '#111', display: 'inline-block', lineHeight: 1}}>●</span> },
-  { id: 'eraser', name: 'Eraser', icon: '🧽' }
-]
+  {
+    id: "round",
+    name: "Round",
+    icon: (
+      <span
+        style={{
+          fontSize: "1.5em",
+          color: "#111",
+          display: "inline-block",
+          lineHeight: 1,
+        }}
+      >
+        ●
+      </span>
+    ),
+  },
+  { id: "eraser", name: "Eraser", icon: "🧽" },
+];
 
 const ColorPopover = styled.div`
   position: absolute;
@@ -342,7 +331,7 @@ const ColorPopover = styled.div`
   justify-content: center;
   pointer-events: auto;
   top: -290px;
-`
+`;
 
 const ZoomControls = styled.div`
   display: flex;
@@ -353,7 +342,7 @@ const ZoomControls = styled.div`
   @media (max-width: 600px) {
     display: none;
   }
-`
+`;
 
 const MobileOnly = styled.div`
   display: none;
@@ -364,108 +353,129 @@ const MobileOnly = styled.div`
     align-items: center;
     flex-shrink: 0;
   }
-`
+`;
 
 interface ControlsProps {
-  showClearButton?: boolean
+  showClearButton?: boolean;
 }
 
 const Controls: React.FC<ControlsProps> = ({ showClearButton = false }) => {
-  const { brushColor, brushSizePercent, updateBrushColor, updateBrushSize, brushType, updateBrushType } = useBrush()
-  const { emit, on, off } = useSocket()
-  const myUUID = useUUID()
-  const { zoomIn, zoomOut, resetView, clearChunks, fitToContent, fitToContentWithServer } = useCanvasStore()
-  const [toolDropdownOpen, setToolDropdownOpen] = useState(false)
-  const toolSelectRef = useRef<HTMLDivElement>(null)
-  const [colorOpen, setColorOpen] = useState(false)
-  const colorBtnRef = useRef<HTMLButtonElement>(null)
-  const colorPopoverRef = useRef<HTMLDivElement>(null)
-  const [isClearing, setIsClearing] = useState(false)
+  const {
+    brushColor,
+    brushSizePercent,
+    updateBrushSize,
+    brushType,
+    updateBrushType,
+  } = useBrush();
+  const { emit, on, off } = useCanvasSocket();
+  const { zoomIn, zoomOut, resetView, clearChunks, fitToContentWithServer } =
+    useCanvasStore();
+  const [toolDropdownOpen, setToolDropdownOpen] = useState(false);
+  const toolSelectRef = useRef<HTMLDivElement>(null);
+  const [colorOpen, setColorOpen] = useState(false);
+  const colorBtnRef = useRef<HTMLButtonElement>(null);
+  const colorPopoverRef = useRef<HTMLDivElement>(null);
+  const [isClearing, setIsClearing] = useState(false);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (toolSelectRef.current && !toolSelectRef.current.contains(event.target as Node)) {
-        setToolDropdownOpen(false)
+      if (
+        toolSelectRef.current &&
+        !toolSelectRef.current.contains(event.target as Node)
+      ) {
+        setToolDropdownOpen(false);
       }
-    }
+    };
 
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   useEffect(() => {
-    if (!colorOpen) return
-    let timeoutId: number | null = null
+    if (!colorOpen) return;
+    let timeoutId: number | null = null;
     const handleClick = (e: MouseEvent | TouchEvent) => {
-      const target = e.target
+      const target = e.target;
       // If event target is not a Node, always close
       if (!(target instanceof Node)) {
-        setColorOpen(false)
-        return
+        setColorOpen(false);
+        return;
       }
-      if (
-        colorBtnRef.current && colorBtnRef.current.contains(target)
-      ) return
-      if (
-        colorPopoverRef.current && colorPopoverRef.current.contains(target)
-      ) return
-      setColorOpen(false)
-    }
+      if (colorBtnRef.current && colorBtnRef.current.contains(target)) return;
+      if (colorPopoverRef.current && colorPopoverRef.current.contains(target))
+        return;
+      setColorOpen(false);
+    };
     timeoutId = window.setTimeout(() => {
-      window.addEventListener('mousedown', handleClick, true)
-      window.addEventListener('touchstart', handleClick, true)
-    }, 0)
+      window.addEventListener("mousedown", handleClick, true);
+      window.addEventListener("touchstart", handleClick, true);
+    }, 0);
     return () => {
-      if (timeoutId) window.clearTimeout(timeoutId)
-      window.removeEventListener('mousedown', handleClick, true)
-      window.removeEventListener('touchstart', handleClick, true)
-    }
-  }, [colorOpen])
+      if (timeoutId) window.clearTimeout(timeoutId);
+      window.removeEventListener("mousedown", handleClick, true);
+      window.removeEventListener("touchstart", handleClick, true);
+    };
+  }, [colorOpen]);
 
   const handleClearCanvas = () => {
-    if (isClearing) return
-    
-    console.log('🧹 Clear canvas button clicked')
-    setIsClearing(true)
-    
+    if (isClearing) return;
+
+    console.log("🧹 Clear canvas button clicked");
+    setIsClearing(true);
+
     try {
-      clearChunks()
-      emit('clear-canvas')
-      console.log('🧹 Clear canvas event emitted')
+      clearChunks();
+      emit("clear-canvas");
+      console.log("🧹 Clear canvas event emitted");
     } catch (error) {
-      console.error('❌ Error clearing canvas:', error)
+      console.error("❌ Error clearing canvas:", error);
     } finally {
-      setTimeout(() => setIsClearing(false), 1000)
+      setTimeout(() => setIsClearing(false), 1000);
     }
-  }
+  };
 
   const handleFitToContent = () => {
-    console.log('🔍 Fit to content button clicked')
-    fitToContentWithServer(emit, on, off)
-  }
+    console.log("🔍 Fit to content button clicked");
+    fitToContentWithServer(emit, on, off);
+  };
 
-  const currentTool = TOOLS.find(t => t.id === brushType) || { id: 'round', name: 'Brush', icon: <span style={{fontSize: '1.5em', color: '#111', display: 'inline-block', lineHeight: 1}}>●</span> }
+  const currentTool = TOOLS.find((t) => t.id === brushType) || {
+    id: "round",
+    name: "Brush",
+    icon: (
+      <span
+        style={{
+          fontSize: "1.5em",
+          color: "#111",
+          display: "inline-block",
+          lineHeight: 1,
+        }}
+      >
+        ●
+      </span>
+    ),
+  };
 
   return (
     <>
       <Toolbar>
         <ToolSection>
           {showClearButton && (
-            <ToolButton 
-              onClick={handleClearCanvas} 
+            <ToolButton
+              onClick={handleClearCanvas}
               title="Clear Canvas"
               disabled={isClearing}
               style={{ opacity: isClearing ? 0.5 : 1 }}
             >
-              {isClearing ? '⏳' : '🧹'}
+              {isClearing ? "⏳" : "🧹"}
             </ToolButton>
           )}
         </ToolSection>
         <Divider />
         <ColorSection>
-          <ColorPreviewButton 
-            ref={colorBtnRef} 
-            onClick={() => setColorOpen(v => !v)} 
+          <ColorPreviewButton
+            ref={colorBtnRef}
+            onClick={() => setColorOpen((v) => !v)}
             title="Color Picker"
             color={brushColor}
           />
@@ -483,7 +493,7 @@ const Controls: React.FC<ControlsProps> = ({ showClearButton = false }) => {
               max={20}
               step={0.5}
               value={brushSizePercent}
-              onChange={e => updateBrushSize(Number(e.target.value))}
+              onChange={(e) => updateBrushSize(Number(e.target.value))}
             />
             <SizeDisplay>{brushSizePercent.toFixed(1)}%</SizeDisplay>
           </SizeSlider>
@@ -498,13 +508,13 @@ const Controls: React.FC<ControlsProps> = ({ showClearButton = false }) => {
               {currentTool.icon}
             </ToolButtonWithPreview>
             <ToolDropdown open={toolDropdownOpen}>
-              {TOOLS.map(tool => (
+              {TOOLS.map((tool) => (
                 <ToolOption
                   key={tool.id}
                   active={tool.id === brushType}
                   onClick={() => {
-                    updateBrushType(tool.id as any)
-                    setToolDropdownOpen(false)
+                    updateBrushType(tool.id as any);
+                    setToolDropdownOpen(false);
                   }}
                 >
                   {tool.icon}
@@ -516,18 +526,30 @@ const Controls: React.FC<ControlsProps> = ({ showClearButton = false }) => {
         </ToolSection>
         <Divider />
         <ZoomControls>
-          <ToolButton onClick={zoomIn} title="Zoom In">🔍+</ToolButton>
-          <ToolButton onClick={zoomOut} title="Zoom Out">🔍-</ToolButton>
-          <ToolButton onClick={resetView} title="Reset View">🏠</ToolButton>
-          <ToolButton onClick={handleFitToContent} title="Fit to Content">📐</ToolButton>
+          <ToolButton onClick={zoomIn} title="Zoom In">
+            🔍+
+          </ToolButton>
+          <ToolButton onClick={zoomOut} title="Zoom Out">
+            🔍-
+          </ToolButton>
+          <ToolButton onClick={resetView} title="Reset View">
+            🏠
+          </ToolButton>
+          <ToolButton onClick={handleFitToContent} title="Fit to Content">
+            📐
+          </ToolButton>
         </ZoomControls>
         <MobileOnly>
-          <ToolButton onClick={resetView} title="Reset View">🏠</ToolButton>
-          <ToolButton onClick={handleFitToContent} title="Fit to Content">📐</ToolButton>
+          <ToolButton onClick={resetView} title="Reset View">
+            🏠
+          </ToolButton>
+          <ToolButton onClick={handleFitToContent} title="Fit to Content">
+            📐
+          </ToolButton>
         </MobileOnly>
       </Toolbar>
     </>
-  )
-}
+  );
+};
 
-export default Controls 
+export default Controls;

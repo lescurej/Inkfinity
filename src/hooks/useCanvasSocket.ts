@@ -1,5 +1,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
+import { EVENTS } from '../../shared/types';
+import { useUserStore } from '../store/userStore';
 
 interface SocketStats {
   totalStrokes: number;
@@ -9,128 +11,152 @@ interface SocketStats {
   activeUsers: number;
 }
 
-export const useCanvasSocket = () => {
-  const socketRef = useRef<Socket | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const eventListenersRef = useRef<Map<string, Function[]>>(new Map());
-  
-  const [isConnected, setIsConnected] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [connectionAttempts, setConnectionAttempts] = useState(0);
-  const [stats, setStats] = useState<SocketStats | null>(null);
+// Singleton socket instance
+let globalSocket: Socket | null = null;
+let globalEventListeners = new Map<string, Function[]>();
+let globalConnectionState = {
+  isConnected: false,
+  isLoading: true,
+  connectionAttempts: 0,
+  stats: null as SocketStats | null
+};
 
-  const cleanup = useCallback(() => {
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = null;
-    }
-    if (heartbeatIntervalRef.current) {
-      clearInterval(heartbeatIntervalRef.current);
-      heartbeatIntervalRef.current = null;
-    }
-  }, []);
+// Singleton cleanup functions
+let globalCleanup: (() => void) | null = null;
+let globalReconnectTimeout: NodeJS.Timeout | null = null;
+let globalHeartbeatInterval: NodeJS.Timeout | null = null;
 
-  const removeAllListeners = useCallback(() => {
-    if (socketRef.current) {
-      const listeners = eventListenersRef.current;
-      listeners.forEach((callbacks, event) => {
-        callbacks.forEach(callback => {
-          socketRef.current?.off(event, callback as any);
-        });
+const cleanupGlobal = () => {
+  if (globalReconnectTimeout) {
+    clearTimeout(globalReconnectTimeout);
+    globalReconnectTimeout = null;
+  }
+  if (globalHeartbeatInterval) {
+    clearInterval(globalHeartbeatInterval);
+    globalHeartbeatInterval = null;
+  }
+};
+
+const removeAllGlobalListeners = () => {
+  if (globalSocket) {
+    globalEventListeners.forEach((callbacks, event) => {
+      callbacks.forEach(callback => {
+        globalSocket?.off(event, callback as any);
       });
-      eventListenersRef.current.clear();
+    });
+    globalEventListeners.clear();
+  }
+};
+
+const addGlobalListener = (event: string, callback: Function) => {
+  if (globalSocket) {
+    if (!globalEventListeners.has(event)) {
+      globalEventListeners.set(event, []);
     }
-  }, []);
+    globalEventListeners.get(event)?.push(callback);
+    globalSocket.on(event, callback as any);
+  }
+};
 
-  const addListener = useCallback((event: string, callback: Function) => {
-    if (socketRef.current) {
-      if (!eventListenersRef.current.has(event)) {
-        eventListenersRef.current.set(event, []);
-      }
-      eventListenersRef.current.get(event)?.push(callback);
-      socketRef.current.on(event, callback as any);
-    }
-  }, []);
+const connectGlobal = () => {
+  if (globalSocket?.connected) return;
 
-  const connect = useCallback(() => {
-    if (socketRef.current?.connected) return;
+  const serverUrl = window.location.origin;
+  
+  console.log('🔗 Attempting to connect to server...');
+  
+  globalSocket = io(serverUrl, {
+    transports: ['websocket'],
+    timeout: 20000,
+    reconnection: true,
+    reconnectionAttempts: 5,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000
+  });
 
-    const serverUrl = window.location.hostname === 'localhost' 
-      ? 'http://localhost:3000' 
-      : window.location.origin;
+  addGlobalListener('connect', () => {
+    console.log('🔗 Connected to server');
+    globalConnectionState.isConnected = true;
+    globalConnectionState.isLoading = false;
+    globalConnectionState.connectionAttempts = 0;
     
-    socketRef.current = io(serverUrl, {
-      transports: ['websocket'],
-      timeout: 20000,
-      reconnection: true,
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000
-    });
-
-    addListener('connect', () => {
-      console.log('🔗 Connected to server');
-      setIsConnected(true);
-      setIsLoading(false);
-      setConnectionAttempts(0);
-      
-      heartbeatIntervalRef.current = setInterval(() => {
-        if (socketRef.current?.connected) {
-          socketRef.current.emit('ping');
-        }
-      }, 30000);
-    });
-
-    addListener('disconnect', (reason: string) => {
-      console.log('🔴 Disconnected from server:', reason);
-      setIsConnected(false);
-      cleanup();
-      
-      if (reason === 'io server disconnect') {
-        setTimeout(() => {
-          socketRef.current?.connect();
-        }, 1000);
+    globalHeartbeatInterval = setInterval(() => {
+      if (globalSocket?.connected) {
+        globalSocket.emit(EVENTS.PING);
       }
-    });
+    }, 30000);
+  });
 
-    addListener('connect_error', (error: any) => {
-      console.error('❌ Connection error:', error);
-      setIsConnected(false);
-      setIsLoading(false);
-      setConnectionAttempts(prev => prev + 1);
-    });
+  addGlobalListener('disconnect', (reason: string) => {
+    console.log('🔴 Disconnected from server:', reason);
+    globalConnectionState.isConnected = false;
+    cleanupGlobal();
+    
+    if (reason === 'io server disconnect') {
+      globalReconnectTimeout = setTimeout(() => {
+        globalSocket?.connect();
+      }, 1000);
+    }
+  });
 
-    addListener('pong', () => {
-      console.log('💓 Heartbeat received');
-    });
+  addGlobalListener('connect_error', (error: any) => {
+    console.error('❌ Connection error:', error);
+    globalConnectionState.isConnected = false;
+    globalConnectionState.isLoading = false;
+    globalConnectionState.connectionAttempts++;
+  });
 
-    addListener('stats', (data: SocketStats) => {
-      setStats(data);
-      console.log('📊 Stats received:', data);
-    });
+  addGlobalListener(EVENTS.PONG, () => {
+    console.log('💓 Heartbeat received');
+  });
 
-    addListener('userDisconnect', (uuid: string) => {
-      console.log('👤 User disconnected:', uuid);
-    });
-  }, [addListener, cleanup]);
+  addGlobalListener(EVENTS.STATS, (data: SocketStats) => {
+    globalConnectionState.stats = data;
+    console.log('📊 Stats received:', data);
+  });
+
+  addGlobalListener(EVENTS.USER_DISCONNECT, (uuid: string) => {
+    console.log('👤 User disconnected:', uuid);
+  });
+
+  addGlobalListener(EVENTS.SESSION_INIT, (data: { uuid: string; name: string }) => {
+    console.log('🎨 Received session init:', data);
+    // Update user store
+    const { setUUID, setArtistName } = useUserStore.getState();
+    setUUID(data.uuid);
+    setArtistName(data.name);
+    console.log('🎨 Set UUID and artist name:', data.uuid, data.name);
+  });
+};
+
+export const useCanvasSocket = () => {
+  const [isConnected, setIsConnected] = useState(globalConnectionState.isConnected);
+  const [isLoading, setIsLoading] = useState(globalConnectionState.isLoading);
+  const [connectionAttempts, setConnectionAttempts] = useState(globalConnectionState.connectionAttempts);
+  const [stats, setStats] = useState<SocketStats | null>(globalConnectionState.stats);
+  
+  const { setUUID, setArtistName } = useUserStore();
 
   const emit = useCallback((event: string, data?: any) => {
-    if (socketRef.current?.connected) {
-      socketRef.current.emit(event, data);
+    if (globalSocket?.connected) {
+      globalSocket.emit(event, data);
     } else {
       console.warn('Socket not connected, cannot emit:', event);
     }
   }, []);
 
+  const requestState = useCallback(() => {
+    emit('requestState', {});
+  }, [emit]);
+
   const on = useCallback((event: string, callback: (data: any) => void) => {
-    addListener(event, callback);
-  }, [addListener]);
+    addGlobalListener(event, callback);
+  }, []);
 
   const off = useCallback((event: string, callback: (data: any) => void) => {
-    if (socketRef.current) {
-      socketRef.current.off(event, callback);
-      const listeners = eventListenersRef.current.get(event) || [];
+    if (globalSocket) {
+      globalSocket.off(event, callback);
+      const listeners = globalEventListeners.get(event) || [];
       const index = listeners.indexOf(callback);
       if (index > -1) {
         listeners.splice(index, 1);
@@ -139,30 +165,48 @@ export const useCanvasSocket = () => {
   }, []);
 
   const getStats = useCallback(() => {
-    emit('get-stats', {});
-  }, [emit]);
-
-  const requestState = useCallback(() => {
-    emit('request-state', {});
+    emit(EVENTS.GET_STATS, {});
   }, [emit]);
 
   const disconnect = useCallback(() => {
-    cleanup();
-    removeAllListeners();
-    if (socketRef.current) {
-      socketRef.current.disconnect();
-      socketRef.current = null;
+    cleanupGlobal();
+    removeAllGlobalListeners();
+    if (globalSocket) {
+      globalSocket.disconnect();
+      globalSocket = null;
     }
+    globalConnectionState.isConnected = false;
     setIsConnected(false);
-  }, [cleanup, removeAllListeners]);
+  }, []);
 
+  // Sync state with global state
   useEffect(() => {
-    connect();
+    const updateState = () => {
+      setIsConnected(globalConnectionState.isConnected);
+      setIsLoading(globalConnectionState.isLoading);
+      setConnectionAttempts(globalConnectionState.connectionAttempts);
+      setStats(globalConnectionState.stats);
+    };
+
+    // Initial sync
+    updateState();
+
+    // Set up interval to sync state
+    const interval = setInterval(updateState, 100);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Initialize connection only once
+  useEffect(() => {
+    if (!globalSocket) {
+      connectGlobal();
+    }
 
     return () => {
-      disconnect();
+      // Don't disconnect on unmount, let the singleton handle it
     };
-  }, [connect, disconnect]);
+  }, []);
 
   return { 
     emit, 

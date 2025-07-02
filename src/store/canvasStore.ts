@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { DrawingSegment, Point } from '../types'
 import { RefObject } from 'react'
+import { EVENTS } from '../../shared/types'
 
 const CHUNK_SIZE = 1000
 
@@ -236,12 +237,12 @@ export const useCanvasStore = create<CanvasState>((set: (fn: (state: CanvasState
         }
       }))
       
-      off('drawingHistory', handleDrawingHistory)
+      off(EVENTS.DRAWING_HISTORY, handleDrawingHistory)
     }
     
-    on('drawingHistory', handleDrawingHistory)
+    on(EVENTS.DRAWING_HISTORY, handleDrawingHistory)
     console.log('🔍 Requesting drawing history from server')
-    emit('requestDrawingHistory')
+    emit(EVENTS.REQUEST_DRAWING_HISTORY)
   },
   fitToContentFromHistory: (history: any[]) => {
     console.log('🔍 fitToContentFromHistory called with', history.length, 'strokes')

@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { resolve } from 'path'
 
 export default defineConfig({
   plugins: [react()],
@@ -17,43 +18,36 @@ export default defineConfig({
       interval: 100
     }
   },
+  resolve: {
+    alias: {
+      '@': resolve(__dirname, 'src'),
+      '@shared': resolve(__dirname, 'shared')
+    }
+  },
   build: {
     outDir: 'dist',
     assetsDir: 'assets',
+    sourcemap: false,
+    minify: 'terser',
     rollupOptions: {
       output: {
         manualChunks: {
           'vendor': ['react', 'react-dom'],
           'pixi': ['pixi.js', '@pixi/react'],
-          'canvas-core': [
-            './src/components/Canvas.tsx',
-            './src/components/CanvasGrid.tsx',
-            './src/hooks/useCanvas.tsx',
-            './src/utils/brushEngine.ts',
-            './src/utils/bitmapBrush.ts',
-            './src/utils/drawStrokeWithPerfectFreehand.ts',
-            './src/utils/shaderManager.ts',
-            './src/utils/watercolorSimulation.ts',
-            './src/utils/paperGrainFilter.ts'
-          ],
-          'ui-components': [
-            './src/components/Controls.tsx',
-            './src/components/ColorPickerWheel.tsx',
-            './src/components/CursorPreview.tsx',
-            './src/components/GPSDisplay.tsx',
-            './src/components/RemoteCursors.tsx'
-          ],
-          'collaboration': [
-            './src/hooks/useCanvasSocket.ts',
-            './src/hooks/useSocket.ts',
-            'socket.io-client'
-          ],
-          'state': [
-            './src/store/canvasStore.ts',
-            'zustand'
-          ]
+          'socket': ['socket.io-client'],
+          'ui': ['@emotion/react', '@emotion/styled', '@jaames/iro'],
+          'utils': ['perfect-freehand', 'nanoid', 'qrcode']
         }
       }
+    },
+    terserOptions: {
+      compress: {
+        drop_console: true,
+        drop_debugger: true
+      }
     }
+  },
+  optimizeDeps: {
+    include: ['react', 'react-dom', 'pixi.js', '@pixi/react', 'socket.io-client']
   }
 }) 

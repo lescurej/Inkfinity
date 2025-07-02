@@ -43,7 +43,6 @@ export function createStroke(points: { x: number; y: number }[], color: string, 
 }
 
 export class BrushEngine {
-  private stamps: Map<string, PIXI.Texture> = new Map()
   private configs: Map<string, BrushConfig> = new Map()
   private loaded = false
 
