@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useCanvasSocket } from "../../../hooks/useCanvasSocket";
-import { useUUID } from "../../../hooks/useUUID";
 import { useCanvasStore } from "../../../store/canvasStore";
 import { useUserStore } from "../../../store/userStore";
 import type { CursorData } from "../../../../shared/types";
@@ -95,6 +94,7 @@ export const useRemoteCursors = () => {
     () => ({
       handleRemoteCursor: (data: CursorData) => {
         if (!isValidCursorData(data)) return;
+        console.log('[RemoteCursor] Received world coordinates:', data.x, data.y, 'from', data.uuid);
         debouncedCursorUpdate(data.uuid, data);
       },
 
@@ -173,37 +173,36 @@ export const useRemoteCursors = () => {
   }, [isConnected, eventHandlers]);
 
   const visibleCursors = useMemo((): VisibleCursor[] => {
-    const windowWidth = window.innerWidth;
-    const windowHeight = window.innerHeight;
+    const { x: vx, y: vy, scale } = viewport;
+    const vw = window.innerWidth / scale;
+    const vh = window.innerHeight / scale;
 
     return Object.values(remoteCursors)
       .filter(({ cursor }) => cursor.uuid !== myUUID)
-      .reduce<VisibleCursor[]>((acc, { cursor }) => {
+      .filter(({ cursor }) =>
+        cursor.x >= vx - VIEWPORT_MARGIN &&
+        cursor.x <= vx + vw + VIEWPORT_MARGIN &&
+        cursor.y >= vy - VIEWPORT_MARGIN &&
+        cursor.y <= vy + vh + VIEWPORT_MARGIN
+      )
+      .map(({ cursor }) => {
         const baseSize = cursor.size || 8;
-        const size = Math.max(baseSize * viewport.scale, 12);
-        const screenX = (cursor.x - viewport.x) * viewport.scale;
-        const screenY = (cursor.y - viewport.y) * viewport.scale;
-
-        if (
-          screenX < -VIEWPORT_MARGIN ||
-          screenY < -VIEWPORT_MARGIN ||
-          screenX > windowWidth + VIEWPORT_MARGIN ||
-          screenY > windowHeight + VIEWPORT_MARGIN
-        ) {
-          return acc;
-        }
-
-        acc.push({
+        const size = Math.max(baseSize * scale, 12);
+        const canvasRef = useCanvasStore.getState().canvasRef;
+        const canvasRect = canvasRef?.current?.getBoundingClientRect();
+        const canvasOffsetX = canvasRect?.left || 0;
+        const canvasOffsetY = canvasRect?.top || 0;
+        const screenX = (cursor.x - vx) * scale + canvasOffsetX;
+        const screenY = (cursor.y - vy) * scale + canvasOffsetY;
+        return {
           ...cursor,
           size,
           screenX,
           screenY,
           color: cursor.color || "#00f",
-        });
-
-        return acc;
-      }, []);
-  }, [remoteCursors, viewport.x, viewport.y, viewport.scale, myUUID]);
+        };
+      });
+  }, [remoteCursors, viewport, myUUID]);
 
   const getDisplayName = useCallback((uuid: string) => {
     if (uuid === myUUID) {

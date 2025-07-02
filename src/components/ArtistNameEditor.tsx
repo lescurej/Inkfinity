@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import styled from "@emotion/styled";
 import { useCanvasSocket } from "../hooks/useCanvasSocket";
-import { useUUID } from "../hooks/useUUID";
 import { useUserStore } from "../store/userStore";
 import { EVENTS } from "../../shared/types";
 

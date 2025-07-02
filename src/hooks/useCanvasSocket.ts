@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useCallback, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { EVENTS } from '../../shared/types';
 import { useUserStore } from '../store/userStore';
@@ -22,7 +22,6 @@ let globalConnectionState = {
 };
 
 // Singleton cleanup functions
-let globalCleanup: (() => void) | null = null;
 let globalReconnectTimeout: NodeJS.Timeout | null = null;
 let globalHeartbeatInterval: NodeJS.Timeout | null = null;
 
@@ -135,8 +134,6 @@ export const useCanvasSocket = () => {
   const [connectionAttempts, setConnectionAttempts] = useState(globalConnectionState.connectionAttempts);
   const [stats, setStats] = useState<SocketStats | null>(globalConnectionState.stats);
   
-  const { setUUID, setArtistName } = useUserStore();
-
   const emit = useCallback((event: string, data?: any) => {
     if (globalSocket?.connected) {
       globalSocket.emit(event, data);

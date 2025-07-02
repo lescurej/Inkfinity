@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useCallback, useState } from "react";
 import * as PIXI from "pixi.js";
 import { useBrush } from "../hooks/useBrush";
 import { useCanvasSocket } from "../hooks/useCanvasSocket";
-import { useUUID } from "../hooks/useUUID";
 import CanvasGrid from "./CanvasGrid";
 import styled from "@emotion/styled";
 import { useCanvasStore } from "../store/canvasStore";
@@ -340,10 +339,11 @@ const Canvas: React.FC = () => {
   // Emit initial cursor position when component mounts or socket connects
   useEffect(() => {
     if (isConnected && myUUID) {
+      const worldPosition = screenToWorld(mousePosition.x, mousePosition.y);
       const cursorData = {
         uuid: myUUID,
-        x: mousePosition.x,
-        y: mousePosition.y,
+        x: worldPosition.x,
+        y: worldPosition.y,
         color: brushColor,
         size: getBrushSizeInPixels(),
         brush: brushType,
