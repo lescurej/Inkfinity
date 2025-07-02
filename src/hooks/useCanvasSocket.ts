@@ -1,6 +1,6 @@
 import { useEffect, useCallback, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { EVENTS } from '../../shared/types';
+import { EVENTS } from "../../types"
 import { useUserStore } from '../store/userStore';
 
 interface SocketStats {

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import styled from "@emotion/styled";
 import { useCanvasSocket } from "../hooks/useCanvasSocket";
 import { useUserStore } from "../store/userStore";
-import { EVENTS } from "../../shared/types";
+import { EVENTS } from "../../types";
 
 const ArtistNameInput = styled.input`
   position: fixed;

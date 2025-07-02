@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { DrawingSegment, Point } from '../types'
 import { RefObject } from 'react'
-import { EVENTS } from '../../shared/types'
+import { EVENTS } from "../../types"
 
 const CHUNK_SIZE = 1000
 

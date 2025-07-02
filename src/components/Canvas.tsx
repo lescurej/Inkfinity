@@ -7,7 +7,7 @@ import styled from "@emotion/styled";
 import { useCanvasStore } from "../store/canvasStore";
 import { useUserStore } from "../store/userStore";
 import { createStroke } from "../utils/brushEngine";
-import { EVENTS } from "../../shared/types";
+import { EVENTS } from "../../types";
 
 const GridOverlay = styled.div`
   position: absolute;

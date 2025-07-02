@@ -16,7 +16,7 @@
   },
   "include": [
     "server.ts",
-    "shared/types.ts"
+    "types.ts"
   ],
   "exclude": [
     "node_modules",

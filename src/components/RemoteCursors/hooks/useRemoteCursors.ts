@@ -2,8 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useCanvasSocket } from "../../../hooks/useCanvasSocket";
 import { useCanvasStore } from "../../../store/canvasStore";
 import { useUserStore } from "../../../store/userStore";
-import type { CursorData } from "../../../../shared/types";
-import { EVENTS } from "../../../../shared/types";
+import  { type CursorData, EVENTS } from "../../../../types";
 import type { RemoteCursorMap, VisibleCursor, RemoteArtistNames } from "../types";
 import { STALE_TIMEOUT, CLEANUP_INTERVAL, DEBOUNCE_DELAY, VIEWPORT_MARGIN } from "../constants";
 

@@ -1,4 +1,4 @@
-import type { CursorData } from "../../../shared/types";
+import type { CursorData } from "../../../types"
 
 export interface RemoteCursorMap {
   [uuid: string]: {
