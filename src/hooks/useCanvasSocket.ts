@@ -18,7 +18,8 @@ let globalConnectionState = {
   isConnected: false,
   isLoading: true,
   connectionAttempts: 0,
-  stats: null as SocketStats | null
+  stats: null as SocketStats | null,
+  drawingHistory: [] as any[]
 };
 
 // Singleton cleanup functions
@@ -60,24 +61,39 @@ const addGlobalListener = (event: string, callback: Function) => {
 const connectGlobal = () => {
   if (globalSocket?.connected) return;
 
-  const serverUrl = window.location.origin;
+  const startTime = performance.now();
+  console.log('🔌 Starting socket connection...');
+
+  const isDevelopment = process.env.NODE_ENV === 'development' || 
+                       window.location.hostname === 'localhost' ||
+                       window.location.hostname === '127.0.0.1';
   
+  const serverUrl = isDevelopment 
+    ? 'http://localhost:3000' 
+    : window.location.origin;
   
+  console.log(`🌐 Connecting to: ${serverUrl}`);
   
   globalSocket = io(serverUrl, {
     transports: ['websocket'],
-    timeout: 20000,
+    timeout: 5000,
     reconnection: true,
-    reconnectionAttempts: 5,
-    reconnectionDelay: 1000,
-    reconnectionDelayMax: 5000
+    reconnectionAttempts: 3,
+    reconnectionDelay: 500,
+    reconnectionDelayMax: 2000,
+    forceNew: false,
+    upgrade: true,
+    rememberUpgrade: true
   });
 
   addGlobalListener('connect', () => {
-
+    const connectTime = performance.now() - startTime;
+    console.log(`✅ Connected to server in ${connectTime.toFixed(2)}ms`);
     globalConnectionState.isConnected = true;
     globalConnectionState.isLoading = false;
     globalConnectionState.connectionAttempts = 0;
+    
+    updateGlobalState();
     
     globalHeartbeatInterval = setInterval(() => {
       if (globalSocket?.connected) {
@@ -87,45 +103,63 @@ const connectGlobal = () => {
   });
 
   addGlobalListener('disconnect', (reason: string) => {
-
+    console.log(`🔌 Disconnected: ${reason}`);
     globalConnectionState.isConnected = false;
     cleanupGlobal();
     
     if (reason === 'io server disconnect') {
       globalReconnectTimeout = setTimeout(() => {
+        console.log('🔄 Attempting reconnection...');
         globalSocket?.connect();
       }, 1000);
     }
   });
 
   addGlobalListener('connect_error', (error: any) => {
-    console.error('❌ Connection error:', error);
+    const errorTime = performance.now() - startTime;
+    console.error(`❌ Connection failed after ${errorTime.toFixed(2)}ms:`, error);
     globalConnectionState.isConnected = false;
     globalConnectionState.isLoading = false;
     globalConnectionState.connectionAttempts++;
   });
 
   addGlobalListener(EVENTS.PONG, () => {
-
+    // Heartbeat response
   });
 
   addGlobalListener(EVENTS.STATS, (data: SocketStats) => {
     globalConnectionState.stats = data;
-
-  });
-
-  addGlobalListener(EVENTS.USER_DISCONNECT, (uuid: string) => {
-
   });
 
   addGlobalListener(EVENTS.SESSION_INIT, (data: { uuid: string; name: string }) => {
-
-    // Update user store
+    const sessionTime = performance.now() - startTime;
+    console.log(`🎭 Session initialized in ${sessionTime.toFixed(2)}ms:`, data);
     const { setUUID, setArtistName } = useUserStore.getState();
     setUUID(data.uuid);
     setArtistName(data.name);
-
   });
+
+  addGlobalListener(EVENTS.CANVAS_STATE, (data: any) => {
+    const stateTime = performance.now() - startTime;
+    console.log(`📊 Canvas state received in ${stateTime.toFixed(2)}ms:`, data.strokes?.length || 0, 'strokes');
+    globalConnectionState.drawingHistory = data.strokes || [];
+    
+    updateGlobalState();
+  });
+
+  addGlobalListener(EVENTS.DRAWING_HISTORY, (history: any[]) => {
+    const historyTime = performance.now() - startTime;
+    console.log(`📚 Drawing history received in ${historyTime.toFixed(2)}ms:`, history.length, 'strokes');
+    globalConnectionState.drawingHistory = history;
+  });
+
+  const updateGlobalState = () => {
+    globalEventListeners.forEach((callbacks, event) => {
+      if (event === 'stateUpdate') {
+        callbacks.forEach(callback => callback());
+      }
+    });
+  };
 };
 
 export const useCanvasSocket = () => {
@@ -176,8 +210,11 @@ export const useCanvasSocket = () => {
     setIsConnected(false);
   }, []);
 
-  // Sync state with global state
   useEffect(() => {
+    if (!globalSocket) {
+      connectGlobal();
+    }
+
     const updateState = () => {
       setIsConnected(globalConnectionState.isConnected);
       setIsLoading(globalConnectionState.isLoading);
@@ -185,36 +222,27 @@ export const useCanvasSocket = () => {
       setStats(globalConnectionState.stats);
     };
 
-    // Initial sync
-    updateState();
-
-    // Set up interval to sync state
-    const interval = setInterval(updateState, 100);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  // Initialize connection only once
-  useEffect(() => {
-    if (!globalSocket) {
-      connectGlobal();
-    }
+    globalEventListeners.set('stateUpdate', [...(globalEventListeners.get('stateUpdate') || []), updateState]);
 
     return () => {
-      // Don't disconnect on unmount, let the singleton handle it
+      const listeners = globalEventListeners.get('stateUpdate') || [];
+      const index = listeners.indexOf(updateState);
+      if (index > -1) {
+        listeners.splice(index, 1);
+      }
     };
   }, []);
 
-  return { 
-    emit, 
-    on, 
-    off, 
-    isConnected, 
-    isLoading, 
-    stats, 
-    getStats, 
+  return {
+    isConnected,
+    isLoading,
+    connectionAttempts,
+    stats,
+    emit,
     requestState,
-    disconnect,
-    connectionAttempts
+    on,
+    off,
+    getStats,
+    disconnect
   };
 }; 

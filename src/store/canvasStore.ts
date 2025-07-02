@@ -46,6 +46,12 @@ interface CanvasState {
   handleMouseMove: (e: React.MouseEvent<HTMLDivElement>) => void
   handleMouseLeave: () => void
   fitToContentFromHistory: (history: any[]) => void
+  setDrawingState: (updates: Partial<{
+    drawing: boolean
+    lastPoint: Point | null
+    isPanning: boolean
+  }>) => void
+  addSegmentsToChunks: (segments: DrawingSegment[]) => void
 }
 
 export const useCanvasStore = create<CanvasState>((set: (fn: (state: CanvasState) => Partial<CanvasState> | CanvasState) => void, get: () => CanvasState) => ({
@@ -58,7 +64,10 @@ export const useCanvasStore = create<CanvasState>((set: (fn: (state: CanvasState
   drawingChunks: new Map(),
   canvasRef: null,
   panStart: null,
-  setViewport: (v: Partial<Viewport>) => set(state => ({ ...state, viewport: { ...state.viewport, ...v } })),
+  setViewport: (v: Partial<Viewport>) => set(state => ({ 
+    ...state, 
+    viewport: { ...state.viewport, ...v } 
+  })),
   setDrawing: (d: boolean) => set(state => ({ ...state, drawing: d })),
   setLastPoint: (p: Point | null) => set(state => ({ ...state, lastPoint: p })),
   setMousePosition: (p: Point) => set(state => ({ ...state, mousePosition: p })),
@@ -68,10 +77,23 @@ export const useCanvasStore = create<CanvasState>((set: (fn: (state: CanvasState
   setPanStart: (p: { x: number; y: number; mouseX: number; mouseY: number } | null) => set(state => ({ ...state, panStart: p })),
   addSegmentToChunk: (seg: DrawingSegment) => {
     const chunkKey = `${Math.floor(seg.x2 / CHUNK_SIZE)},${Math.floor(seg.y2 / CHUNK_SIZE)}`
-    const map = new Map(get().drawingChunks)
-    if (!map.has(chunkKey)) map.set(chunkKey, [])
-    map.get(chunkKey)!.push(seg)
-    set(state => ({ ...state, drawingChunks: map }))
+    set(state => {
+      const map = new Map(state.drawingChunks)
+      if (!map.has(chunkKey)) map.set(chunkKey, [])
+      map.get(chunkKey)!.push(seg)
+      return { ...state, drawingChunks: map }
+    })
+  },
+  addSegmentsToChunks: (segments: DrawingSegment[]) => {
+    set(state => {
+      const map = new Map(state.drawingChunks)
+      segments.forEach(seg => {
+        const chunkKey = `${Math.floor(seg.x2 / CHUNK_SIZE)},${Math.floor(seg.y2 / CHUNK_SIZE)}`
+        if (!map.has(chunkKey)) map.set(chunkKey, [])
+        map.get(chunkKey)!.push(seg)
+      })
+      return { ...state, drawingChunks: map }
+    })
   },
   clearChunks: () => set(state => ({ ...state, drawingChunks: new Map() })),
   getAllSegments: () => {
@@ -363,34 +385,33 @@ export const useCanvasStore = create<CanvasState>((set: (fn: (state: CanvasState
     set(state => ({ ...state, drawing: false, isPanning: false, lastPoint: null, panStart: null }))
   },
   handleMouseMove: (e: React.MouseEvent<HTMLDivElement>) => {
-    set(state => ({ ...state, mousePosition: { x: e.clientX, y: e.clientY } }))
-    const isPanning = get().isPanning
-    const panStart = get().panStart
-    const viewport = get().viewport
-    if (isPanning && panStart) {
-      const dx = e.clientX - panStart.mouseX
-      const dy = e.clientY - panStart.mouseY
-      set(state => ({
-        ...state,
-        viewport: {
-          ...viewport,
-          x: panStart.x - dx / viewport.scale,
-          y: panStart.y - dy / viewport.scale
-        }
-      }))
-      return
-    }
-    if (get().drawing) {
-      const ref = get().canvasRef
-      if (ref && ref.current) {
-        const rect = ref.current.getBoundingClientRect()
-        const x = (e.clientX - rect.left) / viewport.scale + viewport.x
-        const y = (e.clientY - rect.top) / viewport.scale + viewport.y
-        set(state => ({ ...state, lastPoint: { x, y } }))
+    const updates: Partial<CanvasState> = {}
+    
+    updates.mousePosition = { x: e.clientX, y: e.clientY }
+    
+    if (get().isPanning && get().panStart) {
+      const dx = e.clientX - get().panStart!.mouseX
+      const dy = e.clientY - get().panStart!.mouseY
+      updates.viewport = {
+        ...get().viewport,
+        x: get().panStart!.x - dx / get().viewport.scale,
+        y: get().panStart!.y - dy / get().viewport.scale,
       }
     }
+    
+    if (get().drawing) {
+      const worldPos = get().screenToWorld(e.clientX, e.clientY)
+      updates.lastPoint = worldPos
+    }
+    
+    set(state => ({ ...state, ...updates }))
   },
   handleMouseLeave: () => {
     set(state => ({ ...state, drawing: false, isPanning: false, lastPoint: null, panStart: null }))
-  }
+  },
+  setDrawingState: (updates: Partial<{
+    drawing: boolean
+    lastPoint: Point | null
+    isPanning: boolean
+  }>) => set(state => ({ ...state, ...updates })),
 })) 

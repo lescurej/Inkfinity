@@ -49,11 +49,16 @@ export class BrushEngine {
   async initialize() {
     if (this.loaded) return
 
-    // Skip texture loading for now - use fallback rendering only
+    const startTime = performance.now();
+    console.log('🖌️ Initializing brush engine...');
 
+    // Skip texture loading for now - use fallback rendering only
+    this.setupDefaultConfigs();
     
-    this.setupDefaultConfigs()
-    this.loaded = true
+    const initTime = performance.now() - startTime;
+    console.log(`✅ Brush engine initialized in ${initTime.toFixed(2)}ms`);
+    
+    this.loaded = true;
   }
 
   private setupDefaultConfigs() {
@@ -216,6 +221,9 @@ export class BrushEngine {
     pressure: number = 1,
     velocity: number = 1
   ): BrushStamp[] {
+    const startTime = performance.now();
+    console.log(`🎨 Generating stamps for ${points.length} points, brush: ${brushType}`);
+
     const config = this.configs.get(brushType)
     if (!config) return []
 
@@ -260,6 +268,9 @@ export class BrushEngine {
       }
     }
 
+    const stampTime = performance.now() - startTime;
+    console.log(`✅ Generated ${stamps.length} stamps in ${stampTime.toFixed(2)}ms`);
+    
     return stamps
   }
 
@@ -269,6 +280,9 @@ export class BrushEngine {
     brushType: string,
     color: string
   ) {
+    const startTime = performance.now();
+    console.log(`🎨 Rendering ${stamps.length} stamps for ${brushType}`);
+
     const config = this.configs.get(brushType)
     if (!config) return
 
@@ -291,6 +305,13 @@ export class BrushEngine {
 
     // Always use fallback rendering for now
     this.renderFallbackStamps(graphics, stamps, color, config)
+
+    const renderTime = performance.now() - startTime;
+    console.log(`✅ Rendered stamps in ${renderTime.toFixed(2)}ms`);
+    
+    if (renderTime > 16) {
+      console.warn(`🐌 Slow stamp render: ${renderTime.toFixed(2)}ms`);
+    }
   }
 
   private renderFallbackStamps(

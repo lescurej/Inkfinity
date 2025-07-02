@@ -64,15 +64,16 @@ if (isDev) {
 
 const io = new Server(server, {
   cors: { 
-    origin: process.env.ALLOWED_ORIGINS?.split(',') || ["http://localhost:3000", "http://localhost:5173"],
-    credentials: true
+    origin: process.env.ALLOWED_ORIGINS?.split(',') || ["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:5173"],
+    credentials: true,
+    methods: ["GET", "POST"]
   },
   maxHttpBufferSize: 1e6,
   pingTimeout: 60000,
   pingInterval: 25000,
   upgradeTimeout: 10000,
   allowUpgrades: true,
-  transports: ['websocket']
+  transports: ['websocket', 'polling']
 });
 
 const canvasState: {
@@ -120,7 +121,7 @@ async function loadHistory(): Promise<void> {
       canvasState.strokes = canvasState.strokes.slice(-canvasState.maxStrokes);
     }
   } catch (error) {
-
+    // File doesn't exist or is invalid, start with empty canvas
   }
 }
 
@@ -221,12 +222,23 @@ function validateStrokeSize(stroke: Stroke): boolean {
   return stroke.points.length <= MAX_STROKE_SIZE;
 }
 
-setInterval(saveHistory, CONFIG.SAVE_INTERVAL);
-setInterval(cleanupZombieConnections, CONFIG.HEARTBEAT_INTERVAL);
-setInterval(cleanupRateLimits, RATE_LIMIT_CLEANUP_INTERVAL);
+// Store interval IDs for cleanup
+const intervals: NodeJS.Timeout[] = [];
+
+// Capture interval IDs for proper cleanup
+intervals.push(setInterval(saveHistory, CONFIG.SAVE_INTERVAL));
+intervals.push(setInterval(cleanupZombieConnections, CONFIG.HEARTBEAT_INTERVAL));
+intervals.push(setInterval(cleanupRateLimits, RATE_LIMIT_CLEANUP_INTERVAL));
+
+// Add performance logging
+const connectionTimes = new Map<string, number>();
 
 io.on('connection', (socket: Socket) => {
+  const connectionStart = performance.now();
+  console.log(`🔌 New connection attempt: ${socket.id}`);
+  
   if (io.engine.clientsCount > MAX_CONCURRENT_CONNECTIONS) {
+    console.log(`❌ Connection rejected - max clients reached: ${io.engine.clientsCount}`);
     socket.disconnect(true);
     return;
   }
@@ -234,23 +246,28 @@ io.on('connection', (socket: Socket) => {
   const serverAssignedUUID = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   const defaultName = getArtistForUUID(serverAssignedUUID);
   
+  console.log(`📝 Session init for ${serverAssignedUUID} (${defaultName})`);
   socket.emit(EVENTS.SESSION_INIT, { uuid: serverAssignedUUID, name: defaultName });
   
-  const viewport = userViewports.get(serverAssignedUUID) || null;
-  const strokesInViewport = getStrokesInViewport(viewport);
-  
+  // CRITICAL FIX: Send canvas state immediately without waiting for history request
   const canvasStateResponse: CanvasState = {
-    strokes: strokesInViewport,
+    strokes: canvasState.strokes,
     totalStrokes: canvasState.strokes.length,
     maxStrokes: canvasState.maxStrokes
   };
   
+  console.log(`📊 Sending canvas state with ${canvasState.strokes.length} strokes`);
   socket.emit(EVENTS.CANVAS_STATE, canvasStateResponse);
   
-  connectedUsers.set(serverAssignedUUID, Date.now());
+  const now = Date.now();
+  connectedUsers.set(serverAssignedUUID, now);
   socketIdToUuid.set(socket.id, serverAssignedUUID);
-  socketHeartbeats.set(socket.id, Date.now());
-  socketLastActivity.set(socket.id, Date.now());
+  socketHeartbeats.set(socket.id, now);
+  socketLastActivity.set(socket.id, now);
+  
+  const connectionTime = performance.now() - connectionStart;
+  connectionTimes.set(socket.id, connectionTime);
+  console.log(`✅ Connection established in ${connectionTime.toFixed(2)}ms for ${serverAssignedUUID}`);
   
   socket.on(EVENTS.STROKE_ADDED, (stroke: Stroke) => {
     if (isRateLimited(socket.id, EVENTS.STROKE_ADDED, 50)) return;
@@ -279,8 +296,8 @@ io.on('connection', (socket: Socket) => {
     socketLastActivity.set(socket.id, Date.now());
   });
   
-      socket.on(EVENTS.CURSOR_MOVE, (cursorData: CursorData) => {
-      if (isRateLimited(socket.id, EVENTS.CURSOR_MOVE, 100)) return;
+  socket.on(EVENTS.CURSOR_MOVE, (cursorData: CursorData) => {
+    if (isRateLimited(socket.id, EVENTS.CURSOR_MOVE, 100)) return;
     
     if (!isValidCursorData(cursorData)) return;
     
@@ -339,7 +356,11 @@ io.on('connection', (socket: Socket) => {
   });
   
   socket.on(EVENTS.REQUEST_DRAWING_HISTORY, () => {
+    const historyStart = performance.now();
+    console.log(`📚 History request from ${serverAssignedUUID}`);
     socket.emit(EVENTS.DRAWING_HISTORY, canvasState.strokes);
+    const historyTime = performance.now() - historyStart;
+    console.log(`✅ History sent in ${historyTime.toFixed(2)}ms (${canvasState.strokes.length} strokes)`);
   });
   
   socket.on(EVENTS.ARTIST_NAME_CHANGE, (data: ArtistNameChange) => {
@@ -385,17 +406,45 @@ io.on('connection', (socket: Socket) => {
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || 'localhost';
 
+const gracefulShutdown = async (signal: string) => {
+  console.log(`\n🛑 Received ${signal}, shutting down...`);
+  
+  try {
+    // Clear intervals
+    intervals.forEach(clearInterval);
+    
+    // Save state
+    await saveHistory();
+    
+    // Close everything
+    io.close();
+    server.close(() => {
+      console.log('✅ Server closed');
+      process.exit(0);
+    });
+    
+    // Force exit after 3 seconds
+    setTimeout(() => {
+      console.log('⏰ Force exit');
+      process.exit(0);
+    }, 3000);
+    
+  } catch (error) {
+    console.error('❌ Shutdown error:', error);
+    process.exit(1);
+  }
+};
+
 loadHistory().then(() => {
   server.listen(PORT, () => {
-    
+    console.log(`🚀 Server running on http://${HOST}:${PORT}`);
   });
 });
 
-process.on('SIGINT', async () => {
-
-  await saveHistory();
-  process.exit(0);
-});
+// Handle different shutdown signals
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGQUIT', () => gracefulShutdown('SIGQUIT'));
 
 process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
@@ -403,5 +452,5 @@ process.on('unhandledRejection', (reason, promise) => {
 
 process.on('uncaughtException', (error) => {
   console.error('Uncaught Exception:', error);
-  process.exit(1);
+  gracefulShutdown('uncaughtException');
 }); 

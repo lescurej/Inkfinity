@@ -1,0 +1,17 @@
+{
+  "signal": "SIGTERM",
+  "delay": "1000",
+  "ignore": ["canvas-history.json", "node_modules/**/*", "dist/**/*", "src/**/*"],
+  "watch": ["server.ts", "types.ts"],
+  "ext": "ts,js,json",
+  "env": {
+    "NODE_ENV": "development"
+  },
+  "legacyWatch": false,
+  "restartable": "rs",
+  "verbose": true,
+  "colours": true,
+  "execMap": {
+    "ts": "tsx"
+  }
+} 

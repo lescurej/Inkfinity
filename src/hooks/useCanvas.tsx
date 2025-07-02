@@ -252,6 +252,9 @@ export const CanvasProvider: React.FC<CanvasProviderProps> = ({ children }) => {
   // Pan avec molette cliquée ou barre espace
   const handleMouseDown = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
+      const startTime = performance.now();
+      console.log("🖱️ Mouse down event...");
+
       // Pan si bouton du milieu OU barre espace
       if (e.button === 1 || spacePressed) {
         setIsPanning(true);
@@ -270,6 +273,9 @@ export const CanvasProvider: React.FC<CanvasProviderProps> = ({ children }) => {
         setDrawing(true);
         setLastPoint(worldPos);
       }
+
+      const mouseTime = performance.now() - startTime;
+      console.log(`✅ Mouse down processed in ${mouseTime.toFixed(2)}ms`);
     },
     [viewport.x, viewport.y, spacePressed, screenToWorld]
   );
@@ -283,6 +289,8 @@ export const CanvasProvider: React.FC<CanvasProviderProps> = ({ children }) => {
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
+      const startTime = performance.now();
+
       setMousePosition({ x: e.clientX, y: e.clientY });
       // Pan
       if (isPanning && panStart.current) {
@@ -299,6 +307,11 @@ export const CanvasProvider: React.FC<CanvasProviderProps> = ({ children }) => {
       if (drawing) {
         const worldPos = screenToWorld(e.clientX, e.clientY);
         setLastPoint(worldPos);
+      }
+
+      const mouseTime = performance.now() - startTime;
+      if (mouseTime > 1) {
+        console.warn(`🐌 Slow mouse move: ${mouseTime.toFixed(2)}ms`);
       }
     },
     [drawing, isPanning, screenToWorld]

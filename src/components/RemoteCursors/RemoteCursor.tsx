@@ -51,17 +51,21 @@ interface RemoteCursorProps {
   displayName: string;
 }
 
-const RemoteCursor: React.FC<RemoteCursorProps> = ({ cursor, displayName }) => {
-  return (
-    <RemoteCursorContainer
-      x={cursor.screenX}
-      y={cursor.screenY}
-      color={cursor.color}
-      size={cursor.size}
-    >
-      <UUIDLabel>{displayName}</UUIDLabel>
-    </RemoteCursorContainer>
-  );
-};
+const RemoteCursor: React.FC<RemoteCursorProps> = React.memo(
+  ({ cursor, displayName }) => {
+    return (
+      <RemoteCursorContainer
+        x={cursor.screenX}
+        y={cursor.screenY}
+        color={cursor.color}
+        size={cursor.size}
+      >
+        <UUIDLabel>{displayName}</UUIDLabel>
+      </RemoteCursorContainer>
+    );
+  }
+);
+
+RemoteCursor.displayName = "RemoteCursor";
 
 export default RemoteCursor;
