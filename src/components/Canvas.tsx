@@ -223,53 +223,72 @@ const Canvas: React.FC = () => {
     return () => window.removeEventListener("resize", handleResize);
   }, [canvasStore]);
 
-  // Socket events
+  // Socket events with improved state handling
   useEffect(() => {
     const graphics = drawingGraphicsRef.current;
 
     const handleCanvasState = (data: any) => {
       window.dispatchEvent(new CustomEvent("canvas-state-loaded"));
-      if (!graphics) {
+
+      if (!graphics || !graphicsReady) {
         setPendingCanvasState(data);
         return;
       }
-      graphics.clear();
-      if (data.strokes && Array.isArray(data.strokes)) {
-        data.strokes.forEach((stroke: any) => {
-          if (stroke.points && stroke.points.length >= 2) {
-            const color = PIXI.Color.shared.setValue(stroke.color).toNumber();
-            const size = stroke.size * viewport.scale;
-            graphics.lineStyle(size, color, 1);
-            graphics.moveTo(stroke.points[0].x, stroke.points[0].y);
-            for (let i = 1; i < stroke.points.length; i++) {
-              graphics.lineTo(stroke.points[i].x, stroke.points[i].y);
+
+      try {
+        graphics.clear();
+        if (data.strokes && Array.isArray(data.strokes)) {
+          data.strokes.forEach((stroke: any) => {
+            if (stroke.points && stroke.points.length >= 2) {
+              const color = PIXI.Color.shared.setValue(stroke.color).toNumber();
+              const size = stroke.size * viewport.scale;
+              graphics.lineStyle(size, color, 1);
+              graphics.moveTo(stroke.points[0].x, stroke.points[0].y);
+              for (let i = 1; i < stroke.points.length; i++) {
+                graphics.lineTo(stroke.points[i].x, stroke.points[i].y);
+              }
             }
-          }
-        });
+          });
+        }
+      } catch (error) {
+        console.error("❌ Error handling canvas state:", error);
+        setPendingCanvasState(data);
       }
     };
 
     const handleStrokeAdded = (stroke: any) => {
       const graphics = drawingGraphicsRef.current;
-      if (graphics && stroke.points && stroke.points.length >= 2) {
-        const color = PIXI.Color.shared.setValue(stroke.color).toNumber();
-        const size = stroke.size * viewport.scale;
-        graphics.lineStyle(size, color, 1);
-        graphics.moveTo(stroke.points[0].x, stroke.points[0].y);
-        for (let i = 1; i < stroke.points.length; i++) {
-          graphics.lineTo(stroke.points[i].x, stroke.points[i].y);
+      if (!graphics || !graphicsReady) return;
+
+      try {
+        if (stroke.points && stroke.points.length >= 2) {
+          const color = PIXI.Color.shared.setValue(stroke.color).toNumber();
+          const size = stroke.size * viewport.scale;
+          graphics.lineStyle(size, color, 1);
+          graphics.moveTo(stroke.points[0].x, stroke.points[0].y);
+          for (let i = 1; i < stroke.points.length; i++) {
+            graphics.lineTo(stroke.points[i].x, stroke.points[i].y);
+          }
         }
+      } catch (error) {
+        console.error("❌ Error handling stroke added:", error);
       }
     };
 
     const handleStrokeSegment = (segment: any) => {
       const graphics = drawingGraphicsRef.current;
-      if (graphics && segment.from && segment.to) {
-        const color = PIXI.Color.shared.setValue(segment.color).toNumber();
-        const size = segment.size * viewport.scale;
-        graphics.lineStyle(size, color, 1);
-        graphics.moveTo(segment.from.x, segment.from.y);
-        graphics.lineTo(segment.to.x, segment.to.y);
+      if (!graphics || !graphicsReady) return;
+
+      try {
+        if (segment.from && segment.to) {
+          const color = PIXI.Color.shared.setValue(segment.color).toNumber();
+          const size = segment.size * viewport.scale;
+          graphics.lineStyle(size, color, 1);
+          graphics.moveTo(segment.from.x, segment.from.y);
+          graphics.lineTo(segment.to.x, segment.to.y);
+        }
+      } catch (error) {
+        console.error("❌ Error handling stroke segment:", error);
       }
     };
 
@@ -280,8 +299,6 @@ const Canvas: React.FC = () => {
         }
         setPendingCanvasState(null);
         setCurrentStroke([]);
-
-        // Force the store to empty to prevent redraw
         canvasStore.loadHistory([]);
         canvasStore.clearChunks();
       } catch (error) {
@@ -310,32 +327,36 @@ const Canvas: React.FC = () => {
     };
   }, [on, off, viewport.scale, canvasStore, graphicsReady]);
 
+  // Apply pending canvas state when graphics become ready
   useEffect(() => {
-    if (pendingCanvasState && drawingGraphicsRef.current) {
-      // Apply pending canvas state as soon as graphics are ready
+    if (pendingCanvasState && drawingGraphicsRef.current && graphicsReady) {
       const graphics = drawingGraphicsRef.current;
-      graphics.clear();
-      const data = pendingCanvasState;
-      if (data.strokes && Array.isArray(data.strokes)) {
-        data.strokes.forEach((stroke: any) => {
-          if (stroke.points && stroke.points.length >= 2) {
-            const color = PIXI.Color.shared.setValue(stroke.color).toNumber();
-            const size = stroke.size * viewport.scale;
-            graphics.lineStyle(size, color, 1);
-            graphics.moveTo(stroke.points[0].x, stroke.points[0].y);
-            for (let i = 1; i < stroke.points.length; i++) {
-              graphics.lineTo(stroke.points[i].x, stroke.points[i].y);
+      try {
+        graphics.clear();
+        const data = pendingCanvasState;
+        if (data.strokes && Array.isArray(data.strokes)) {
+          data.strokes.forEach((stroke: any) => {
+            if (stroke.points && stroke.points.length >= 2) {
+              const color = PIXI.Color.shared.setValue(stroke.color).toNumber();
+              const size = stroke.size * viewport.scale;
+              graphics.lineStyle(size, color, 1);
+              graphics.moveTo(stroke.points[0].x, stroke.points[0].y);
+              for (let i = 1; i < stroke.points.length; i++) {
+                graphics.lineTo(stroke.points[i].x, stroke.points[i].y);
+              }
             }
-          }
-        });
+          });
+        }
+        setPendingCanvasState(null);
+      } catch (error) {
+        console.error("❌ Error applying pending canvas state:", error);
       }
-      setPendingCanvasState(null);
     }
-  }, [pendingCanvasState, viewport.scale]);
+  }, [pendingCanvasState, viewport.scale, graphicsReady]);
 
   // Emit initial cursor position when component mounts or socket connects
   useEffect(() => {
-    if (isConnected && myUUID) {
+    if (isConnected && myUUID && graphicsReady) {
       const worldPosition = screenToWorld(mousePosition.x, mousePosition.y);
       const cursorData = {
         uuid: myUUID,
@@ -365,11 +386,14 @@ const Canvas: React.FC = () => {
     emit,
     viewport,
     getDisplayName,
+    graphicsReady,
   ]);
 
-  // Mouse handlers
+  // Mouse handlers with connection validation
   const handleCanvasMouseDown = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
+      if (!isConnected || !graphicsReady) return;
+
       handleMouseDown(e);
       if (e.button === 0 && !canvasStore.spacePressed) {
         const { x, y } = screenToWorld(e.clientX, e.clientY);
@@ -378,6 +402,8 @@ const Canvas: React.FC = () => {
       }
     },
     [
+      isConnected,
+      graphicsReady,
       handleMouseDown,
       canvasStore.spacePressed,
       screenToWorld,
@@ -387,6 +413,8 @@ const Canvas: React.FC = () => {
 
   const handleCanvasMouseMove = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
+      if (!isConnected || !graphicsReady) return;
+
       handleMouseMove(e);
       if (drawing && lastPoint) {
         const { x, y } = screenToWorld(e.clientX, e.clientY);
@@ -398,9 +426,8 @@ const Canvas: React.FC = () => {
           const size = getBrushSizeInPixels() * viewport.scale;
 
           const graphics = drawingGraphicsRef.current;
-          if (graphics) {
-            if (brushType === "eraser") {
-            } else {
+          if (graphics && brushType !== "eraser") {
+            try {
               const color = PIXI.Color.shared.setValue(brushColor).toNumber();
               graphics.lineStyle(size, color, 1);
               graphics.blendMode = PIXI.BLEND_MODES.NORMAL;
@@ -409,24 +436,26 @@ const Canvas: React.FC = () => {
                 newStroke[newStroke.length - 2].y
               );
               graphics.lineTo(x, y);
+            } catch (error) {
+              console.error("❌ Error drawing stroke:", error);
             }
           }
 
-          if (newStroke.length >= 2) {
-            const segment = {
-              from: newStroke[newStroke.length - 2],
-              to: { x, y },
-              color: brushType === "eraser" ? "#FFFFFF" : brushColor,
-              size: getBrushSizeInPixels(),
-              brush: brushType,
-              uuid: myUUID,
-            };
-            emit(EVENTS.STROKE_SEGMENT, segment);
-          }
+          const segment = {
+            from: newStroke[newStroke.length - 2],
+            to: { x, y },
+            color: brushType === "eraser" ? "#FFFFFF" : brushColor,
+            size: getBrushSizeInPixels(),
+            brush: brushType,
+            uuid: myUUID,
+          };
+          emit(EVENTS.STROKE_SEGMENT, segment);
         }
       }
     },
     [
+      isConnected,
+      graphicsReady,
       drawing,
       lastPoint,
       currentStroke,
@@ -443,6 +472,8 @@ const Canvas: React.FC = () => {
   );
 
   const handleCanvasMouseUp = useCallback(() => {
+    if (!isConnected || !graphicsReady) return;
+
     handleMouseUp();
     if (currentStroke.length > 1) {
       const stroke = createStroke(
@@ -456,6 +487,8 @@ const Canvas: React.FC = () => {
     setCurrentStroke([]);
     canvasStore.setLastPoint(null);
   }, [
+    isConnected,
+    graphicsReady,
     handleMouseUp,
     currentStroke,
     brushColor,
