@@ -63,6 +63,10 @@ interface CanvasState {
   addSegmentsToChunks: (segments: DrawingSegment[]) => void
   setPinchStart: (p: { distance: number; centerX: number; centerY: number; scale: number } | null) => void
   setIsPinching: (p: boolean) => void
+  touchStartTime: number | null
+  touchStartPosition: { x: number; y: number } | null
+  touchPanThreshold: number
+  touchTimeThreshold: number
 }
 
 // Helper function to calculate distance between two points
@@ -71,7 +75,7 @@ const getDistance = (x1: number, y1: number, x2: number, y2: number) => {
 };
 
 // Helper function to calculate center point between two touches
-const getCenterPoint = (touch1: Touch, touch2: Touch) => {
+const getCenterPoint = (touch1: React.Touch, touch2: React.Touch) => {
   return {
     x: (touch1.clientX + touch2.clientX) / 2,
     y: (touch1.clientY + touch2.clientY) / 2
@@ -92,6 +96,10 @@ export const useCanvasStore = create<CanvasState>((set: (fn: (state: CanvasState
   isTouchPanning: false,
   pinchStart: null,
   isPinching: false,
+  touchStartTime: null,
+  touchStartPosition: null,
+  touchPanThreshold: 10,
+  touchTimeThreshold: 200,
   setViewport: (v: Partial<Viewport>) => set(state => ({ 
     ...state, 
     viewport: { ...state.viewport, ...v } 
@@ -448,12 +456,10 @@ export const useCanvasStore = create<CanvasState>((set: (fn: (state: CanvasState
       const touch = e.touches[0]
       const rect = ref?.current?.getBoundingClientRect()
       if (rect) {
-        const x = (touch.clientX - rect.left) / viewport.scale + viewport.x
-        const y = (touch.clientY - rect.top) / viewport.scale + viewport.y
         set(state => ({ 
           ...state, 
-          drawing: true, 
-          lastPoint: { x, y },
+          touchStartTime: Date.now(),
+          touchStartPosition: { x: touch.clientX, y: touch.clientY },
           touchStart: {
             x: viewport.x,
             y: viewport.y,
@@ -484,10 +490,48 @@ export const useCanvasStore = create<CanvasState>((set: (fn: (state: CanvasState
     e.preventDefault()
     const updates: Partial<CanvasState> = {}
     
-    if (e.touches.length === 1 && get().drawing) {
+    if (e.touches.length === 1) {
       const touch = e.touches[0]
-      const worldPos = get().screenToWorld(touch.clientX, touch.clientY)
-      updates.lastPoint = worldPos
+      const state = get()
+      
+      if (state.touchStartPosition && state.touchStartTime) {
+        const distance = getDistance(
+          state.touchStartPosition.x,
+          state.touchStartPosition.y,
+          touch.clientX,
+          touch.clientY
+        )
+        const timeElapsed = Date.now() - state.touchStartTime
+        
+        if (distance > state.touchPanThreshold || timeElapsed > state.touchTimeThreshold) {
+          if (!state.isTouchPanning && !state.drawing) {
+            set(state => ({ ...state, isTouchPanning: true }))
+          }
+          
+          if (state.isTouchPanning && state.touchStart) {
+            const dx = touch.clientX - state.touchStart.touchX
+            const dy = touch.clientY - state.touchStart.touchY
+            updates.viewport = {
+              ...state.viewport,
+              x: state.touchStart.x - dx / state.viewport.scale,
+              y: state.touchStart.y - dy / state.viewport.scale,
+            }
+          }
+        } else if (!state.drawing) {
+          const rect = state.canvasRef?.current?.getBoundingClientRect()
+          if (rect) {
+            const worldX = (touch.clientX - rect.left) / state.viewport.scale + state.viewport.x
+            const worldY = (touch.clientY - rect.top) / state.viewport.scale + state.viewport.y
+            updates.drawing = true
+            updates.lastPoint = { x: worldX, y: worldY }
+          }
+        }
+      }
+      
+      if (state.drawing) {
+        const worldPos = state.screenToWorld(touch.clientX, touch.clientY)
+        updates.lastPoint = worldPos
+      }
     } else if (e.touches.length === 2 && get().isPinching && get().pinchStart) {
       const touch1 = e.touches[0]
       const touch2 = e.touches[1]
@@ -522,7 +566,9 @@ export const useCanvasStore = create<CanvasState>((set: (fn: (state: CanvasState
       isPinching: false,
       lastPoint: null, 
       touchStart: null,
-      pinchStart: null
+      pinchStart: null,
+      touchStartTime: null,
+      touchStartPosition: null
     }))
   },
   setDrawingState: (updates: Partial<{

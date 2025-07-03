@@ -1,10 +1,4 @@
-import React, {
-  useEffect,
-  useRef,
-  useCallback,
-  useState,
-  useMemo,
-} from "react";
+import React, { useEffect, useRef, useCallback, useState } from "react";
 import * as PIXI from "pixi.js";
 import { useBrush } from "../hooks/useBrush";
 import { useCanvasSocket } from "../hooks/useCanvasSocket";
@@ -20,19 +14,6 @@ const GridOverlay = styled.div`
   inset: 0;
   pointer-events: none;
   z-index: 10;
-`;
-
-const StatsDisplay = styled.div`
-  position: fixed;
-  top: 60px;
-  right: 20px;
-  padding: 12px;
-  border-radius: 8px;
-  font-size: 11px;
-  background: rgba(0, 0, 0, 0.8);
-  color: white;
-  z-index: 1000;
-  min-width: 150px;
 `;
 
 const LoadingOverlay = styled.div`
@@ -568,31 +549,34 @@ const Canvas: React.FC = () => {
     ]
   );
 
-  const handleCanvasTouchEnd = useCallback(() => {
-    if (!isReady) return;
+  const handleCanvasTouchEnd = useCallback(
+    (e: React.TouchEvent<HTMLDivElement>) => {
+      if (!isReady) return;
 
-    handleTouchEnd();
-    if (currentStroke.length > 1) {
-      const stroke = createStroke(
-        currentStroke,
-        brushColor,
-        getBrushSizeInPixels(),
-        brushType
-      );
-      emit(EVENTS.STROKE_ADDED, stroke);
-    }
-    setCurrentStroke([]);
-    canvasStore.setLastPoint(null);
-  }, [
-    isReady,
-    handleTouchEnd,
-    currentStroke,
-    brushColor,
-    getBrushSizeInPixels,
-    brushType,
-    emit,
-    canvasStore.setLastPoint,
-  ]);
+      handleTouchEnd(e);
+      if (currentStroke.length > 1) {
+        const stroke = createStroke(
+          currentStroke,
+          brushColor,
+          getBrushSizeInPixels(),
+          brushType
+        );
+        emit(EVENTS.STROKE_ADDED, stroke);
+      }
+      setCurrentStroke([]);
+      canvasStore.setLastPoint(null);
+    },
+    [
+      isReady,
+      handleTouchEnd,
+      currentStroke,
+      brushColor,
+      getBrushSizeInPixels,
+      brushType,
+      emit,
+      canvasStore.setLastPoint,
+    ]
+  );
 
   return (
     <div
