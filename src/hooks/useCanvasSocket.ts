@@ -68,8 +68,9 @@ const connectGlobal = () => {
                        window.location.hostname === 'localhost' ||
                        window.location.hostname === '127.0.0.1';
   
+  // Use the current hostname and port for development to support mobile access
   const serverUrl = isDevelopment 
-    ? 'http://localhost:3000' 
+    ? `${window.location.protocol}//${window.location.hostname}:3000`
     : window.location.origin;
   
   console.log(`🌐 Connecting to: ${serverUrl}`);

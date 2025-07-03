@@ -89,6 +89,9 @@ const Canvas: React.FC = () => {
     handleMouseUp,
     handleMouseMove,
     handleMouseLeave,
+    handleTouchStart,
+    handleTouchMove,
+    handleTouchEnd,
     setCanvasRef,
   } = canvasStore;
 
@@ -145,6 +148,21 @@ const Canvas: React.FC = () => {
     },
     [setCanvasRef]
   );
+
+  // Handle window resize
+  useEffect(() => {
+    const handleResize = () => {
+      if (pixiAppRef.current) {
+        pixiAppRef.current.renderer.resize(
+          window.innerWidth,
+          window.innerHeight
+        );
+      }
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   // Apply viewport transformation to PIXI container
   useEffect(() => {
@@ -444,6 +462,138 @@ const Canvas: React.FC = () => {
     handleMouseLeave();
   }, [handleMouseLeave]);
 
+  const handleCanvasTouchStart = useCallback(
+    (e: React.TouchEvent<HTMLDivElement>) => {
+      if (!isReady) return;
+
+      handleTouchStart(e);
+      if (e.touches.length === 1) {
+        const touch = e.touches[0];
+        const { x, y } = screenToWorld(touch.clientX, touch.clientY);
+        setCurrentStroke([{ x, y }]);
+        canvasStore.setLastPoint({ x, y });
+        canvasStore.setDrawing(true);
+      }
+    },
+    [
+      isReady,
+      handleTouchStart,
+      screenToWorld,
+      canvasStore.setLastPoint,
+      canvasStore.setDrawing,
+    ]
+  );
+
+  const handleCanvasTouchMove = useCallback(
+    (e: React.TouchEvent<HTMLDivElement>) => {
+      if (!isReady) return;
+
+      handleTouchMove(e);
+
+      if (
+        e.touches.length === 1 &&
+        canvasStore.drawing &&
+        canvasStore.lastPoint
+      ) {
+        const touch = e.touches[0];
+        const { x, y } = screenToWorld(touch.clientX, touch.clientY);
+
+        const newStroke = [...currentStroke, { x, y }];
+        setCurrentStroke(newStroke);
+        canvasStore.setLastPoint({ x, y });
+
+        if (newStroke.length >= 2) {
+          const size = getBrushSizeInPixels() * viewport.scale;
+          const graphics = drawingGraphicsRef.current;
+
+          if (graphics && brushType !== "eraser") {
+            const color = PIXI.Color.shared.setValue(brushColor).toNumber();
+            graphics.lineStyle(size, color, 1);
+            graphics.moveTo(
+              newStroke[newStroke.length - 2].x,
+              newStroke[newStroke.length - 2].y
+            );
+            graphics.lineTo(x, y);
+          }
+
+          const segment = {
+            from: newStroke[newStroke.length - 2],
+            to: { x, y },
+            color: brushType === "eraser" ? "#FFFFFF" : brushColor,
+            size: getBrushSizeInPixels(),
+            brush: brushType,
+            uuid: myUUID,
+          };
+          emit(EVENTS.STROKE_SEGMENT, segment);
+        }
+
+        const cursorData = {
+          uuid: myUUID,
+          x,
+          y,
+          size: getBrushSizeInPixels(),
+          color: brushColor,
+          brush: brushType,
+          name:
+            useUserStore.getState().customName ||
+            useUserStore.getState().artistName ||
+            "Unknown Artist",
+          viewport: {
+            x: viewport.x,
+            y: viewport.y,
+            width: window.innerWidth,
+            height: window.innerHeight,
+            scale: viewport.scale,
+          },
+        };
+        emit(EVENTS.CURSOR_MOVE, cursorData);
+      }
+    },
+    [
+      isReady,
+      canvasStore.drawing,
+      canvasStore.lastPoint,
+      currentStroke,
+      brushColor,
+      getBrushSizeInPixels,
+      screenToWorld,
+      canvasStore.setLastPoint,
+      viewport.scale,
+      viewport.x,
+      viewport.y,
+      emit,
+      myUUID,
+      brushType,
+      handleTouchMove,
+    ]
+  );
+
+  const handleCanvasTouchEnd = useCallback(() => {
+    if (!isReady) return;
+
+    handleTouchEnd();
+    if (currentStroke.length > 1) {
+      const stroke = createStroke(
+        currentStroke,
+        brushColor,
+        getBrushSizeInPixels(),
+        brushType
+      );
+      emit(EVENTS.STROKE_ADDED, stroke);
+    }
+    setCurrentStroke([]);
+    canvasStore.setLastPoint(null);
+  }, [
+    isReady,
+    handleTouchEnd,
+    currentStroke,
+    brushColor,
+    getBrushSizeInPixels,
+    brushType,
+    emit,
+    canvasStore.setLastPoint,
+  ]);
+
   return (
     <div
       ref={canvasRefCallback}
@@ -452,12 +602,16 @@ const Canvas: React.FC = () => {
         height: "100vh",
         position: "relative",
         overflow: "hidden",
+        touchAction: "none",
       }}
       onWheel={handleWheel}
       onMouseDown={handleCanvasMouseDown}
       onMouseMove={handleCanvasMouseMove}
       onMouseUp={handleCanvasMouseUp}
       onMouseLeave={handleCanvasMouseLeave}
+      onTouchStart={handleCanvasTouchStart}
+      onTouchMove={handleCanvasTouchMove}
+      onTouchEnd={handleCanvasTouchEnd}
     >
       {isLoading && (
         <LoadingOverlay>

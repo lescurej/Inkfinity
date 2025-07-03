@@ -21,6 +21,10 @@ interface CanvasState {
   drawingChunks: Map<string, DrawingSegment[]>
   canvasRef: RefObject<HTMLDivElement> | null
   panStart: { x: number; y: number; mouseX: number; mouseY: number } | null
+  touchStart: { x: number; y: number; touchX: number; touchY: number } | null
+  isTouchPanning: boolean
+  pinchStart: { distance: number; centerX: number; centerY: number; scale: number } | null
+  isPinching: boolean
   setViewport: (v: Partial<Viewport>) => void
   setDrawing: (d: boolean) => void
   setLastPoint: (p: Point | null) => void
@@ -29,6 +33,8 @@ interface CanvasState {
   setSpacePressed: (s: boolean) => void
   setCanvasRef: (ref: RefObject<HTMLDivElement>) => void
   setPanStart: (p: { x: number; y: number; mouseX: number; mouseY: number } | null) => void
+  setTouchStart: (p: { x: number; y: number; touchX: number; touchY: number } | null) => void
+  setIsTouchPanning: (p: boolean) => void
   addSegmentToChunk: (seg: DrawingSegment) => void
   clearChunks: () => void
   getAllSegments: () => DrawingSegment[]
@@ -45,6 +51,9 @@ interface CanvasState {
   handleMouseUp: () => void
   handleMouseMove: (e: React.MouseEvent<HTMLDivElement>) => void
   handleMouseLeave: () => void
+  handleTouchStart: (e: React.TouchEvent<HTMLDivElement>) => void
+  handleTouchMove: (e: React.TouchEvent<HTMLDivElement>) => void
+  handleTouchEnd: (e: React.TouchEvent<HTMLDivElement>) => void
   fitToContentFromHistory: (history: any[]) => void
   setDrawingState: (updates: Partial<{
     drawing: boolean
@@ -52,7 +61,22 @@ interface CanvasState {
     isPanning: boolean
   }>) => void
   addSegmentsToChunks: (segments: DrawingSegment[]) => void
+  setPinchStart: (p: { distance: number; centerX: number; centerY: number; scale: number } | null) => void
+  setIsPinching: (p: boolean) => void
 }
+
+// Helper function to calculate distance between two points
+const getDistance = (x1: number, y1: number, x2: number, y2: number) => {
+  return Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
+};
+
+// Helper function to calculate center point between two touches
+const getCenterPoint = (touch1: Touch, touch2: Touch) => {
+  return {
+    x: (touch1.clientX + touch2.clientX) / 2,
+    y: (touch1.clientY + touch2.clientY) / 2
+  };
+};
 
 export const useCanvasStore = create<CanvasState>((set: (fn: (state: CanvasState) => Partial<CanvasState> | CanvasState) => void, get: () => CanvasState) => ({
   viewport: { x: 0, y: 0, scale: 1 },
@@ -64,6 +88,10 @@ export const useCanvasStore = create<CanvasState>((set: (fn: (state: CanvasState
   drawingChunks: new Map(),
   canvasRef: null,
   panStart: null,
+  touchStart: null,
+  isTouchPanning: false,
+  pinchStart: null,
+  isPinching: false,
   setViewport: (v: Partial<Viewport>) => set(state => ({ 
     ...state, 
     viewport: { ...state.viewport, ...v } 
@@ -75,6 +103,8 @@ export const useCanvasStore = create<CanvasState>((set: (fn: (state: CanvasState
   setSpacePressed: (s: boolean) => set(state => ({ ...state, spacePressed: s })),
   setCanvasRef: (ref: RefObject<HTMLDivElement>) => set(state => ({ ...state, canvasRef: ref })),
   setPanStart: (p: { x: number; y: number; mouseX: number; mouseY: number } | null) => set(state => ({ ...state, panStart: p })),
+  setTouchStart: (p: { x: number; y: number; touchX: number; touchY: number } | null) => set(state => ({ ...state, touchStart: p })),
+  setIsTouchPanning: (p: boolean) => set(state => ({ ...state, isTouchPanning: p })),
   addSegmentToChunk: (seg: DrawingSegment) => {
     const chunkKey = `${Math.floor(seg.x2 / CHUNK_SIZE)},${Math.floor(seg.y2 / CHUNK_SIZE)}`
     set(state => {
@@ -409,9 +439,97 @@ export const useCanvasStore = create<CanvasState>((set: (fn: (state: CanvasState
   handleMouseLeave: () => {
     set(state => ({ ...state, drawing: false, isPanning: false, lastPoint: null, panStart: null }))
   },
+  handleTouchStart: (e: React.TouchEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    const viewport = get().viewport
+    const ref = get().canvasRef
+    
+    if (e.touches.length === 1) {
+      const touch = e.touches[0]
+      const rect = ref?.current?.getBoundingClientRect()
+      if (rect) {
+        const x = (touch.clientX - rect.left) / viewport.scale + viewport.x
+        const y = (touch.clientY - rect.top) / viewport.scale + viewport.y
+        set(state => ({ 
+          ...state, 
+          drawing: true, 
+          lastPoint: { x, y },
+          touchStart: {
+            x: viewport.x,
+            y: viewport.y,
+            touchX: touch.clientX,
+            touchY: touch.clientY
+          }
+        }))
+      }
+    } else if (e.touches.length === 2) {
+      const touch1 = e.touches[0]
+      const touch2 = e.touches[1]
+      const distance = getDistance(touch1.clientX, touch1.clientY, touch2.clientX, touch2.clientY)
+      const center = getCenterPoint(touch1, touch2)
+      
+      set(state => ({ 
+        ...state, 
+        isPinching: true,
+        pinchStart: {
+          distance,
+          centerX: center.x,
+          centerY: center.y,
+          scale: viewport.scale
+        }
+      }))
+    }
+  },
+  handleTouchMove: (e: React.TouchEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    const updates: Partial<CanvasState> = {}
+    
+    if (e.touches.length === 1 && get().drawing) {
+      const touch = e.touches[0]
+      const worldPos = get().screenToWorld(touch.clientX, touch.clientY)
+      updates.lastPoint = worldPos
+    } else if (e.touches.length === 2 && get().isPinching && get().pinchStart) {
+      const touch1 = e.touches[0]
+      const touch2 = e.touches[1]
+      const currentDistance = getDistance(touch1.clientX, touch1.clientY, touch2.clientX, touch2.clientY)
+      const currentCenter = getCenterPoint(touch1, touch2)
+      
+      const scaleRatio = currentDistance / get().pinchStart!.distance
+      const newScale = Math.max(0.1, Math.min(5, get().pinchStart!.scale * scaleRatio))
+      
+      const ref = get().canvasRef
+      const rect = ref?.current?.getBoundingClientRect()
+      if (rect) {
+        const centerX = (currentCenter.x - rect.left) / get().viewport.scale + get().viewport.x
+        const centerY = (currentCenter.y - rect.top) / get().viewport.scale + get().viewport.y
+        
+        updates.viewport = {
+          scale: newScale,
+          x: centerX - currentCenter.x / newScale,
+          y: centerY - currentCenter.y / newScale
+        }
+      }
+    }
+    
+    set(state => ({ ...state, ...updates }))
+  },
+  handleTouchEnd: (e: React.TouchEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    set(state => ({ 
+      ...state, 
+      drawing: false, 
+      isTouchPanning: false, 
+      isPinching: false,
+      lastPoint: null, 
+      touchStart: null,
+      pinchStart: null
+    }))
+  },
   setDrawingState: (updates: Partial<{
     drawing: boolean
     lastPoint: Point | null
     isPanning: boolean
   }>) => set(state => ({ ...state, ...updates })),
+  setPinchStart: (p: { distance: number; centerX: number; centerY: number; scale: number } | null) => set(state => ({ ...state, pinchStart: p })),
+  setIsPinching: (p: boolean) => set(state => ({ ...state, isPinching: p })),
 })) 
