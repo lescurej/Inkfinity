@@ -71,6 +71,7 @@ const Canvas: React.FC = () => {
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const pixiAppRef = useRef<PIXI.Application | null>(null);
   const drawingGraphicsRef = useRef<PIXI.Graphics | null>(null);
+  const drawingContainerRef = useRef<PIXI.Container | null>(null);
   const { uuid: myUUID } = useUserStore();
 
   const [currentStroke, setCurrentStroke] = useState<
@@ -94,14 +95,12 @@ const Canvas: React.FC = () => {
   const { brushColor, brushType, getBrushSizeInPixels } = useBrush();
   const { emit, on, off, isConnected } = useCanvasSocket();
 
-  // PIXIJS RECOMMENDED APPROACH: Use useCallback for ref
   const canvasRefCallback = useCallback(
     (node: HTMLDivElement | null) => {
       if (node) {
         canvasRef.current = node;
         setCanvasRef(canvasRef);
 
-        // Initialize PIXI immediately when ref is available
         if (!pixiAppRef.current) {
           try {
             const app = new PIXI.Application({
@@ -124,6 +123,7 @@ const Canvas: React.FC = () => {
 
             const drawingContainer = new PIXI.Container();
             app.stage.addChild(drawingContainer);
+            drawingContainerRef.current = drawingContainer;
 
             const drawingGraphics = new PIXI.Graphics();
             drawingContainer.addChild(drawingGraphics);
@@ -135,16 +135,27 @@ const Canvas: React.FC = () => {
           }
         }
       } else {
-        // Cleanup when ref is null (component unmounting)
         if (pixiAppRef.current) {
           pixiAppRef.current.destroy(true);
           pixiAppRef.current = null;
           drawingGraphicsRef.current = null;
+          drawingContainerRef.current = null;
         }
       }
     },
     [setCanvasRef]
   );
+
+  // Apply viewport transformation to PIXI container
+  useEffect(() => {
+    if (drawingContainerRef.current) {
+      drawingContainerRef.current.position.set(
+        -viewport.x * viewport.scale,
+        -viewport.y * viewport.scale
+      );
+      drawingContainerRef.current.scale.set(viewport.scale, viewport.scale);
+    }
+  }, [viewport.x, viewport.y, viewport.scale]);
 
   // Set up event listeners immediately when socket connects
   useEffect(() => {
