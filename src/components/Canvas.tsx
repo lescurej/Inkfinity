@@ -1,4 +1,10 @@
-import React, { useEffect, useRef, useCallback, useState } from "react";
+import React, {
+  useEffect,
+  useRef,
+  useCallback,
+  useState,
+  useMemo,
+} from "react";
 import * as PIXI from "pixi.js";
 import { useBrush } from "../hooks/useBrush";
 import { useCanvasSocket } from "../hooks/useCanvasSocket";
@@ -53,7 +59,9 @@ const Canvas: React.FC = () => {
   const pixiAppRef = useRef<PIXI.Application | null>(null);
   const drawingGraphicsRef = useRef<PIXI.Graphics | null>(null);
   const drawingContainerRef = useRef<PIXI.Container | null>(null);
-  const { uuid: myUUID } = useUserStore();
+  const staticGraphicsRef = useRef<PIXI.Graphics | null>(null);
+  const realtimeGraphicsRef = useRef<PIXI.Graphics | null>(null);
+  const { uuid: myUUID, customName, artistName } = useUserStore();
 
   const [currentStroke, setCurrentStroke] = useState<
     { x: number; y: number }[]
@@ -109,9 +117,16 @@ const Canvas: React.FC = () => {
             app.stage.addChild(drawingContainer);
             drawingContainerRef.current = drawingContainer;
 
-            const drawingGraphics = new PIXI.Graphics();
-            drawingContainer.addChild(drawingGraphics);
-            drawingGraphicsRef.current = drawingGraphics;
+            // Create separate graphics for static and real-time content
+            const staticGraphics = new PIXI.Graphics();
+            const realtimeGraphics = new PIXI.Graphics();
+
+            drawingContainer.addChild(staticGraphics);
+            drawingContainer.addChild(realtimeGraphics);
+
+            staticGraphicsRef.current = staticGraphics;
+            realtimeGraphicsRef.current = realtimeGraphics;
+            drawingGraphicsRef.current = realtimeGraphics; // Keep for backward compatibility
 
             pixiAppRef.current = app;
           } catch (error) {
@@ -123,6 +138,8 @@ const Canvas: React.FC = () => {
           pixiAppRef.current.destroy(true);
           pixiAppRef.current = null;
           drawingGraphicsRef.current = null;
+          staticGraphicsRef.current = null;
+          realtimeGraphicsRef.current = null;
           drawingContainerRef.current = null;
         }
       }
@@ -269,12 +286,43 @@ const Canvas: React.FC = () => {
     };
   }, [isConnected, on, off, viewport.scale]);
 
-  // Handle stroke segments for real-time drawing
+  // Render static segments from chunks (only when chunks change, not viewport)
+  useEffect(() => {
+    if (!pixiAppRef.current) return;
+
+    const graphics = staticGraphicsRef.current;
+    if (graphics) {
+      graphics.clear();
+
+      // Render all segments from chunks (not just visible ones)
+      // The viewport transformation handles the visibility
+      const allSegments = canvasStore.getAllSegments();
+      allSegments.forEach((segment) => {
+        if (
+          segment.x1 !== undefined &&
+          segment.y1 !== undefined &&
+          segment.x2 !== undefined &&
+          segment.y2 !== undefined
+        ) {
+          const color = PIXI.Color.shared
+            .setValue(segment.color || "#000000")
+            .toNumber();
+          const size = segment.size || segment.width || 1;
+
+          graphics.lineStyle(size, color, 1);
+          graphics.moveTo(segment.x1, segment.y1);
+          graphics.lineTo(segment.x2, segment.y2);
+        }
+      });
+    }
+  }, [canvasStore.drawingChunks]); // Only depend on chunks, not viewport
+
+  // Handle real-time stroke segments (use realtime graphics)
   useEffect(() => {
     if (!isConnected || !pixiAppRef.current) return;
 
     const handleStrokeSegment = (segment: any) => {
-      const graphics = drawingGraphicsRef.current;
+      const graphics = realtimeGraphicsRef.current;
       if (graphics && segment.from && segment.to) {
         const color = PIXI.Color.shared
           .setValue(segment.color || "#000000")
@@ -294,14 +342,18 @@ const Canvas: React.FC = () => {
     };
   }, [isConnected, on, off, viewport.scale]);
 
-  // Handle canvas cleared
+  // Clear real-time graphics when canvas is cleared
   useEffect(() => {
     if (!isConnected || !pixiAppRef.current) return;
 
     const handleCanvasCleared = () => {
-      const graphics = drawingGraphicsRef.current;
-      if (graphics) {
-        graphics.clear();
+      const staticGraphics = staticGraphicsRef.current;
+      const realtimeGraphics = realtimeGraphicsRef.current;
+      if (staticGraphics) {
+        staticGraphics.clear();
+      }
+      if (realtimeGraphics) {
+        realtimeGraphics.clear();
       }
     };
 
@@ -311,6 +363,11 @@ const Canvas: React.FC = () => {
       off(EVENTS.CANVAS_CLEARED, handleCanvasCleared);
     };
   }, [isConnected, on, off]);
+
+  // Create a function to get the display name
+  const getDisplayName = useCallback(() => {
+    return customName || artistName || "Unknown Artist";
+  }, [customName, artistName]);
 
   // Mouse handlers
   const handleCanvasMouseDown = useCallback(
@@ -350,10 +407,7 @@ const Canvas: React.FC = () => {
         size: getBrushSizeInPixels(),
         color: brushColor,
         brush: brushType,
-        name:
-          useUserStore.getState().customName ||
-          useUserStore.getState().artistName ||
-          "Unknown Artist",
+        name: getDisplayName(),
         viewport: {
           x: viewport.x,
           y: viewport.y,
@@ -362,7 +416,11 @@ const Canvas: React.FC = () => {
           scale: viewport.scale,
         },
       };
-      emit(EVENTS.CURSOR_MOVE, cursorData);
+
+      // Only emit cursor movement if we have a valid name
+      if (cursorData.name && cursorData.name !== "Connecting...") {
+        emit(EVENTS.CURSOR_MOVE, cursorData);
+      }
 
       if (canvasStore.drawing && canvasStore.lastPoint) {
         const newStroke = [...currentStroke, { x, y }];
@@ -410,6 +468,7 @@ const Canvas: React.FC = () => {
       emit,
       myUUID,
       brushType,
+      getDisplayName,
     ]
   );
 
@@ -511,10 +570,7 @@ const Canvas: React.FC = () => {
           size: getBrushSizeInPixels(),
           color: brushColor,
           brush: brushType,
-          name:
-            useUserStore.getState().customName ||
-            useUserStore.getState().artistName ||
-            "Unknown Artist",
+          name: getDisplayName(),
           viewport: {
             x: viewport.x,
             y: viewport.y,
@@ -523,7 +579,11 @@ const Canvas: React.FC = () => {
             scale: viewport.scale,
           },
         };
-        emit(EVENTS.CURSOR_MOVE, cursorData);
+
+        // Only emit cursor movement if we have a valid name
+        if (cursorData.name && cursorData.name !== "Connecting...") {
+          emit(EVENTS.CURSOR_MOVE, cursorData);
+        }
       }
     },
     [
@@ -542,6 +602,7 @@ const Canvas: React.FC = () => {
       myUUID,
       brushType,
       handleTouchMove,
+      getDisplayName,
     ]
   );
 

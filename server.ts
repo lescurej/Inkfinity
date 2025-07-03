@@ -27,7 +27,8 @@ const ARTISTS = [
 
 const MAX_CONCURRENT_CONNECTIONS = 1000;
 const MAX_STROKE_SIZE = 10000;
-const RATE_LIMIT_CLEANUP_INTERVAL = 300000;
+const CLEANUP_INTERVAL = 60000; // 1 minute
+const RATE_LIMIT_CLEANUP_INTERVAL = 300000; // 5 minutes
 const CLEAR_COOLDOWN = 5000;
 
 function getArtistForUUID(uuid: string): string {
@@ -233,6 +234,16 @@ intervals.push(setInterval(cleanupRateLimits, RATE_LIMIT_CLEANUP_INTERVAL));
 // Add performance logging
 const connectionTimes = new Map<string, number>();
 
+// Set up periodic cleanup
+setInterval(() => {
+  cleanupRateLimits();
+  cleanupZombieConnections();
+  
+  // Log memory usage
+  const memUsage = process.memoryUsage();
+  console.log(`🧠 Memory usage: ${(memUsage.heapUsed / 1024 / 1024).toFixed(2)}MB / ${(memUsage.heapTotal / 1024 / 1024).toFixed(2)}MB`);
+}, CLEANUP_INTERVAL);
+
 io.on('connection', (socket: Socket) => {
   const connectionStart = performance.now();
   console.log(`🔌 New connection attempt: ${socket.id}`);
@@ -304,7 +315,8 @@ io.on('connection', (socket: Socket) => {
     if (cursorData.viewport && !isValidViewport(cursorData.viewport)) return;
     const validatedCursorData: CursorData = {
       ...cursorData,
-      uuid: serverAssignedUUID
+      uuid: serverAssignedUUID,
+      name: cursorData.name || defaultName
     };
     
     const isFirstMove = !userViewports.has(serverAssignedUUID);
@@ -312,7 +324,7 @@ io.on('connection', (socket: Socket) => {
     if (isFirstMove) {
       const userConnectData: CursorData = {
         uuid: serverAssignedUUID,
-        name: cursorData.name || defaultName,
+        name: validatedCursorData.name,
         x: cursorData.x,
         y: cursorData.y,
         size: cursorData.size,

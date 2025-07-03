@@ -45,6 +45,32 @@ export function createStroke(points: { x: number; y: number }[], color: string, 
 export class BrushEngine {
   private configs: Map<string, BrushConfig> = new Map()
   private loaded = false
+  private stampPool: BrushStamp[] = []
+  private poolSize = 1000
+
+  private getStampFromPool(): BrushStamp {
+    if (this.stampPool.length > 0) {
+      return this.stampPool.pop()!;
+    }
+    return {
+      x: 0, y: 0, size: 0, opacity: 0, rotation: 0, pressure: 0, velocity: 0, color: ''
+    };
+  }
+
+  private returnStampToPool(stamp: BrushStamp) {
+    if (this.stampPool.length < this.poolSize) {
+      // Reset stamp properties
+      stamp.x = 0;
+      stamp.y = 0;
+      stamp.size = 0;
+      stamp.opacity = 0;
+      stamp.rotation = 0;
+      stamp.pressure = 0;
+      stamp.velocity = 0;
+      stamp.color = '';
+      this.stampPool.push(stamp);
+    }
+  }
 
   async initialize() {
     if (this.loaded) return
@@ -227,7 +253,6 @@ export class BrushEngine {
     const config = this.configs.get(brushType)
     if (!config) return []
 
-    // Tool-specific spacing boost for perf
     let effectiveSpacing = config.spacing
     if (brushType === 'charcoal') effectiveSpacing *= 5
     if (['pastel', 'gouache', 'oil', 'watercolor', 'marker', 'highlighter'].includes(brushType)) effectiveSpacing *= 3
@@ -252,19 +277,20 @@ export class BrushEngine {
         
         const stampPressure = config.pressureSensitivity ? pressure : 1
         let size = baseSize * stampPressure * (0.8 + Math.random() * 0.4)
-        size = Math.min(size, 32) // Clamp max dab size
+        size = Math.min(size, 32)
         const opacity = (0.6 + Math.random() * 0.4) * stampPressure
         
-        stamps.push({
-          x,
-          y,
-          size,
-          opacity,
-          rotation: Math.random() * Math.PI * 2,
-          pressure: stampPressure,
-          velocity,
-          color: '#000'
-        })
+        const stamp = this.getStampFromPool();
+        stamp.x = x;
+        stamp.y = y;
+        stamp.size = size;
+        stamp.opacity = opacity;
+        stamp.rotation = Math.random() * Math.PI * 2;
+        stamp.pressure = stampPressure;
+        stamp.velocity = velocity;
+        stamp.color = '#000';
+        
+        stamps.push(stamp);
       }
     }
 
@@ -436,6 +462,11 @@ export class BrushEngine {
     if (existing) {
       this.configs.set(brushType, { ...existing, ...config })
     }
+  }
+
+  // Add cleanup method
+  cleanupStamps(stamps: BrushStamp[]) {
+    stamps.forEach(stamp => this.returnStampToPool(stamp));
   }
 }
 

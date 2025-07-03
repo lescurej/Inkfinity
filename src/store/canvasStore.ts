@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { DrawingSegment, Point } from '../types'
 import { RefObject } from 'react'
 import { EVENTS } from "../../types"
+import { viewportUtils } from '../utils/viewportUtils'
 
 const CHUNK_SIZE = 1000
 
@@ -76,12 +77,21 @@ interface CanvasState {
     isPanning: boolean
   }>) => void
   addSegmentsToChunks: (segments: DrawingSegment[]) => void
-  setPinchStart: (p: { distance: number; centerX: number; centerY: number; scale: number } | null) => void
+  setPinchStart: (p: { 
+    distance: number; 
+    centerX: number; 
+    centerY: number; 
+    centerWorldX: number;
+    centerWorldY: number;
+    scale: number 
+  } | null) => void
   setIsPinching: (p: boolean) => void
   touchStartTime: number | null
   touchStartPosition: { x: number; y: number } | null
   touchPanThreshold: number
   touchTimeThreshold: number
+  getVisibleChunks: (viewport: Viewport) => DrawingSegment[]
+  getVisibleChunksOptimized: (viewport: Viewport) => DrawingSegment[]
 }
 
 // Helper function to calculate distance between two points
@@ -132,21 +142,25 @@ export const useCanvasStore = create<CanvasState>((set: (fn: (state: CanvasState
   addSegmentToChunk: (seg: DrawingSegment) => {
     const chunkKey = `${Math.floor(seg.x2 / CHUNK_SIZE)},${Math.floor(seg.y2 / CHUNK_SIZE)}`
     set(state => {
-      const map = new Map(state.drawingChunks)
-      if (!map.has(chunkKey)) map.set(chunkKey, [])
-      map.get(chunkKey)!.push(seg)
-      return { ...state, drawingChunks: map }
+      const newChunks = new Map(state.drawingChunks)
+      if (!newChunks.has(chunkKey)) {
+        newChunks.set(chunkKey, [])
+      }
+      newChunks.get(chunkKey)!.push(seg)
+      return { ...state, drawingChunks: newChunks }
     })
   },
   addSegmentsToChunks: (segments: DrawingSegment[]) => {
     set(state => {
-      const map = new Map(state.drawingChunks)
+      const newChunks = new Map(state.drawingChunks)
       segments.forEach(seg => {
         const chunkKey = `${Math.floor(seg.x2 / CHUNK_SIZE)},${Math.floor(seg.y2 / CHUNK_SIZE)}`
-        if (!map.has(chunkKey)) map.set(chunkKey, [])
-        map.get(chunkKey)!.push(seg)
+        if (!newChunks.has(chunkKey)) {
+          newChunks.set(chunkKey, [])
+        }
+        newChunks.get(chunkKey)!.push(seg)
       })
-      return { ...state, drawingChunks: map }
+      return { ...state, drawingChunks: newChunks }
     })
   },
   clearChunks: () => set(state => ({ ...state, drawingChunks: new Map() })),
@@ -169,9 +183,7 @@ export const useCanvasStore = create<CanvasState>((set: (fn: (state: CanvasState
     const viewport = get().viewport
     if (!ref || !ref.current) return { x: 0, y: 0 }
     const rect = ref.current.getBoundingClientRect()
-    const x = (screenX - rect.left) / viewport.scale + viewport.x
-    const y = (screenY - rect.top) / viewport.scale + viewport.y
-    return { x, y }
+    return viewportUtils.screenToWorld(screenX, screenY, viewport, rect)
   },
   zoomIn: () => {
     const viewport = get().viewport
@@ -205,48 +217,11 @@ export const useCanvasStore = create<CanvasState>((set: (fn: (state: CanvasState
     set(state => ({ ...state, viewport: { x: 0, y: 0, scale: 1 } }))
   },
   fitToContent: () => {
-    const segments = get().getAllSegments()
-    if (segments.length === 0) {
-      get().resetView()
-      return
-    }
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-    segments.forEach(seg => {
-      minX = Math.min(minX, seg.x1, seg.x2)
-      minY = Math.min(minY, seg.y1, seg.y2)
-      maxX = Math.max(maxX, seg.x1, seg.x2)
-      maxY = Math.max(maxY, seg.y1, seg.y2)
-    })
-    let contentWidth = maxX - minX
-    let contentHeight = maxY - minY
-    const minContentSize = 200
-    if (contentWidth < minContentSize) {
-      const center = minX + contentWidth / 2
-      minX = center - minContentSize / 2
-      maxX = center + minContentSize / 2
-      contentWidth = minContentSize
-    }
-    if (contentHeight < minContentSize) {
-      const center = minY + contentHeight / 2
-      minY = center - minContentSize / 2
-      maxY = center + minContentSize / 2
-      contentHeight = minContentSize
-    }
-    const padding = 100
-    const scaleX = (window.innerWidth - padding * 2) / contentWidth
-    const scaleY = (window.innerHeight - padding * 2) / contentHeight
-    const scale = Math.min(scaleX, scaleY, 5)
-    const centerX = minX + contentWidth / 2
-    const centerY = minY + contentHeight / 2
-    const viewportX = centerX - window.innerWidth / 2 / scale
-    const viewportY = centerY - window.innerHeight / 2 / scale
+    const strokes = get().getAllSegments()
+    const newViewport = viewportUtils.calculateFitToContent(strokes)
     set(state => ({
       ...state,
-      viewport: {
-        x: viewportX,
-        y: viewportY,
-        scale
-      }
+      viewport: newViewport
     }))
   },
   fitToContentWithServer: (emit: any, on: any, off: any) => {
@@ -311,57 +286,10 @@ export const useCanvasStore = create<CanvasState>((set: (fn: (state: CanvasState
     emit(EVENTS.REQUEST_DRAWING_HISTORY)
   },
   fitToContentFromHistory: (history: any[]) => {
-    if (history.length === 0) {
-      get().resetView()
-      return
-    }
-    
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-    
-    history.forEach(stroke => {
-      if (stroke.points && Array.isArray(stroke.points)) {
-        stroke.points.forEach((point: { x: number; y: number }) => {
-          minX = Math.min(minX, point.x)
-          minY = Math.min(minY, point.y)
-          maxX = Math.max(maxX, point.x)
-          maxY = Math.max(maxY, point.y)
-        })
-      }
-    })
-    
-    let contentWidth = maxX - minX
-    let contentHeight = maxY - minY
-    const minContentSize = 200
-    
-    if (contentWidth < minContentSize) {
-      const center = minX + contentWidth / 2
-      minX = center - minContentSize / 2
-      maxX = center + minContentSize / 2
-      contentWidth = minContentSize
-    }
-    if (contentHeight < minContentSize) {
-      const center = minY + contentHeight / 2
-      minY = center - minContentSize / 2
-      maxY = center + minContentSize / 2
-      contentHeight = minContentSize
-    }
-    
-    const padding = 100
-    const scaleX = (window.innerWidth - padding * 2) / contentWidth
-    const scaleY = (window.innerHeight - padding * 2) / contentHeight
-    const scale = Math.min(scaleX, scaleY, 5)
-    const centerX = minX + contentWidth / 2
-    const centerY = minY + contentHeight / 2
-    const viewportX = centerX - window.innerWidth / 2 / scale
-    const viewportY = centerY - window.innerHeight / 2 / scale
-    
+    const newViewport = viewportUtils.calculateFitToContent(history)
     set(state => ({
       ...state,
-      viewport: {
-        x: viewportX,
-        y: viewportY,
-        scale
-      }
+      viewport: newViewport
     }))
   },
   navigateToCoordinates: (x: number, y: number, scale?: number) => {
@@ -589,6 +517,77 @@ export const useCanvasStore = create<CanvasState>((set: (fn: (state: CanvasState
     lastPoint: Point | null
     isPanning: boolean
   }>) => set(state => ({ ...state, ...updates })),
-  setPinchStart: (p: { distance: number; centerX: number; centerY: number; scale: number } | null) => set(state => ({ ...state, pinchStart: p })),
+  setPinchStart: (p: { 
+    distance: number; 
+    centerX: number; 
+    centerY: number; 
+    centerWorldX: number;
+    centerWorldY: number;
+    scale: number 
+  } | null) => set(state => ({ ...state, pinchStart: p })),
   setIsPinching: (p: boolean) => set(state => ({ ...state, isPinching: p })),
+  getVisibleChunks: (viewport: Viewport) => {
+    const chunks = get().drawingChunks;
+    const visibleSegments: DrawingSegment[] = [];
+    
+    // Calculate viewport bounds with padding
+    const padding = 200; // Extra padding for smooth scrolling
+    const minX = viewport.x - padding;
+    const maxX = viewport.x + window.innerWidth / viewport.scale + padding;
+    const minY = viewport.y - padding;
+    const maxY = viewport.y + window.innerHeight / viewport.scale + padding;
+    
+    // Calculate chunk bounds
+    const minChunkX = Math.floor(minX / CHUNK_SIZE);
+    const maxChunkX = Math.floor(maxX / CHUNK_SIZE);
+    const minChunkY = Math.floor(minY / CHUNK_SIZE);
+    const maxChunkY = Math.floor(maxY / CHUNK_SIZE);
+    
+    // Iterate only through visible chunks
+    for (let chunkX = minChunkX; chunkX <= maxChunkX; chunkX++) {
+      for (let chunkY = minChunkY; chunkY <= maxChunkY; chunkY++) {
+        const chunkKey = `${chunkX},${chunkY}`;
+        const chunk = chunks.get(chunkKey);
+        if (chunk) {
+          // Filter segments within viewport bounds
+          const visibleInChunk = chunk.filter(seg => 
+            seg.x2 >= minX && seg.x2 <= maxX && 
+            seg.y2 >= minY && seg.y2 <= maxY
+          );
+          visibleSegments.push(...visibleInChunk);
+        }
+      }
+    }
+    
+    return visibleSegments;
+  },
+  getVisibleChunksOptimized: (viewport: Viewport) => {
+    const chunks = get().drawingChunks;
+    const visibleSegments: DrawingSegment[] = [];
+    
+    // Use more aggressive culling for performance
+    const padding = 100;
+    const minX = viewport.x - padding;
+    const maxX = viewport.x + window.innerWidth / viewport.scale + padding;
+    const minY = viewport.y - padding;
+    const maxY = viewport.y + window.innerHeight / viewport.scale + padding;
+    
+    // Only check chunks that could contain visible segments
+    const minChunkX = Math.floor(minX / CHUNK_SIZE);
+    const maxChunkX = Math.floor(maxX / CHUNK_SIZE);
+    const minChunkY = Math.floor(minY / CHUNK_SIZE);
+    const maxChunkY = Math.floor(maxY / CHUNK_SIZE);
+    
+    for (let chunkX = minChunkX; chunkX <= maxChunkX; chunkX++) {
+      for (let chunkY = minChunkY; chunkY <= maxChunkY; chunkY++) {
+        const chunkKey = `${chunkX},${chunkY}`;
+        const chunk = chunks.get(chunkKey);
+        if (chunk) {
+          visibleSegments.push(...chunk);
+        }
+      }
+    }
+    
+    return visibleSegments;
+  },
 })) 

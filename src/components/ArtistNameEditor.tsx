@@ -94,6 +94,8 @@ const ArtistNameEditor: React.FC = () => {
     customName,
     setCustomName,
     artistName,
+    isInitialized,
+    getDisplayName,
   } = useUserStore();
 
   const inputRef = useRef<HTMLInputElement>(null);
@@ -131,14 +133,14 @@ const ArtistNameEditor: React.FC = () => {
   const handleMouseEnter = useCallback(() => setIsHovered(true), []);
   const handleMouseLeave = useCallback(() => setIsHovered(false), []);
 
-  const displayName = customName || artistName || "Unknown Artist";
+  const displayName = getDisplayName();
 
   return (
     <>
       <ArtistNameLabel>Enter your name here:</ArtistNameLabel>
       {isEditingName ? (
         <ArtistNameInput
-          value={customName}
+          value={customName || artistName || ""}
           onChange={(e) => setCustomName(e.target.value)}
           onKeyDown={handleNameSubmit}
           onBlur={handleNameBlur}

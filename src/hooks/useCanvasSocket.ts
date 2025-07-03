@@ -26,6 +26,9 @@ let globalConnectionState = {
 let globalReconnectTimeout: NodeJS.Timeout | null = null;
 let globalHeartbeatInterval: NodeJS.Timeout | null = null;
 
+// Add cleanup tracking
+let cleanupCallbacks = new Set<() => void>();
+
 const cleanupGlobal = () => {
   if (globalReconnectTimeout) {
     clearTimeout(globalReconnectTimeout);
@@ -68,7 +71,6 @@ const connectGlobal = () => {
                        window.location.hostname === 'localhost' ||
                        window.location.hostname === '127.0.0.1';
   
-  // Use the current hostname and port for development to support mobile access
   const serverUrl = isDevelopment 
     ? `${window.location.protocol}//${window.location.hostname}:3000`
     : window.location.origin;
@@ -87,9 +89,39 @@ const connectGlobal = () => {
     rememberUpgrade: true
   });
 
+  // Log all socket events for debugging
+  globalSocket.onAny((eventName, ...args) => {
+    console.log(`📡 Socket event: ${eventName}`, args);
+    
+    // Handle SESSION_INIT event directly here
+    if (eventName === EVENTS.SESSION_INIT) {
+      const data = args[0] as { uuid: string; name: string };
+      const sessionTime = performance.now() - startTime;
+      console.log(`🎭 SESSION_INIT received in ${sessionTime.toFixed(2)}ms:`, data);
+      console.log(`🆔 UUID from server: "${data.uuid}"`);
+      console.log(`🎨 Artist name from server: "${data.name}"`);
+      
+      const { setUUID, setArtistName } = useUserStore.getState();
+      setUUID(data.uuid);
+      setArtistName(data.name);
+      console.log(`✅ UUID and artist name set in store`);
+      
+      // Verify the values were set correctly
+      const storeState = useUserStore.getState();
+      console.log(`🔍 Store state after SESSION_INIT:`, {
+        uuid: storeState.uuid,
+        artistName: storeState.artistName,
+        customName: storeState.customName,
+        isInitialized: storeState.isInitialized
+      });
+    }
+  });
+
   addGlobalListener('connect', () => {
     const connectTime = performance.now() - startTime;
     console.log(`✅ Connected to server in ${connectTime.toFixed(2)}ms`);
+    console.log(`🔍 Socket ID: ${globalSocket?.id}`);
+    console.log(`🔍 Waiting for SESSION_INIT event...`);
     globalConnectionState.isConnected = true;
     globalConnectionState.isLoading = false;
     globalConnectionState.connectionAttempts = 0;
@@ -130,14 +162,6 @@ const connectGlobal = () => {
 
   addGlobalListener(EVENTS.STATS, (data: SocketStats) => {
     globalConnectionState.stats = data;
-  });
-
-  addGlobalListener(EVENTS.SESSION_INIT, (data: { uuid: string; name: string }) => {
-    const sessionTime = performance.now() - startTime;
-    console.log(`🎭 Session initialized in ${sessionTime.toFixed(2)}ms:`, data);
-    const { setUUID, setArtistName } = useUserStore.getState();
-    setUUID(data.uuid);
-    setArtistName(data.name);
   });
 
   addGlobalListener(EVENTS.CANVAS_STATE, (data: any) => {
@@ -224,12 +248,20 @@ export const useCanvasSocket = () => {
     };
 
     globalEventListeners.set('stateUpdate', [...(globalEventListeners.get('stateUpdate') || []), updateState]);
+    cleanupCallbacks.add(updateState);
 
     return () => {
       const listeners = globalEventListeners.get('stateUpdate') || [];
       const index = listeners.indexOf(updateState);
       if (index > -1) {
         listeners.splice(index, 1);
+      }
+      cleanupCallbacks.delete(updateState);
+      
+      // Clean up if no more components are using the socket
+      if (cleanupCallbacks.size === 0) {
+        cleanupGlobal();
+        removeAllGlobalListeners();
       }
     };
   }, []);
