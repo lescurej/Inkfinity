@@ -23,7 +23,22 @@ interface CanvasState {
   panStart: { x: number; y: number; mouseX: number; mouseY: number } | null
   touchStart: { x: number; y: number; touchX: number; touchY: number } | null
   isTouchPanning: boolean
-  pinchStart: { distance: number; centerX: number; centerY: number; scale: number } | null
+  pinchStart: { 
+    distance: number; 
+    centerX: number; 
+    centerY: number; 
+    centerWorldX: number;
+    centerWorldY: number;
+    scale: number 
+  } | null
+  twoFingerStart: {
+    centerX: number;
+    centerY: number;
+    centerWorldX: number;
+    centerWorldY: number;
+    viewportX: number;
+    viewportY: number;
+  } | null
   isPinching: boolean
   setViewport: (v: Partial<Viewport>) => void
   setDrawing: (d: boolean) => void
@@ -95,11 +110,12 @@ export const useCanvasStore = create<CanvasState>((set: (fn: (state: CanvasState
   touchStart: null,
   isTouchPanning: false,
   pinchStart: null,
+  twoFingerStart: null,
   isPinching: false,
   touchStartTime: null,
   touchStartPosition: null,
-  touchPanThreshold: 10,
-  touchTimeThreshold: 200,
+  touchPanThreshold: 3,
+  touchTimeThreshold: 50,
   setViewport: (v: Partial<Viewport>) => set(state => ({ 
     ...state, 
     viewport: { ...state.viewport, ...v } 
@@ -449,6 +465,8 @@ export const useCanvasStore = create<CanvasState>((set: (fn: (state: CanvasState
   },
   handleTouchStart: (e: React.TouchEvent<HTMLDivElement>) => {
     e.preventDefault()
+    e.stopPropagation()
+    
     const viewport = get().viewport
     const ref = get().canvasRef
     
@@ -456,16 +474,14 @@ export const useCanvasStore = create<CanvasState>((set: (fn: (state: CanvasState
       const touch = e.touches[0]
       const rect = ref?.current?.getBoundingClientRect()
       if (rect) {
+        const worldX = (touch.clientX - rect.left) / viewport.scale + viewport.x
+        const worldY = (touch.clientY - rect.top) / viewport.scale + viewport.y
         set(state => ({ 
           ...state, 
+          drawing: true,
+          lastPoint: { x: worldX, y: worldY },
           touchStartTime: Date.now(),
-          touchStartPosition: { x: touch.clientX, y: touch.clientY },
-          touchStart: {
-            x: viewport.x,
-            y: viewport.y,
-            touchX: touch.clientX,
-            touchY: touch.clientY
-          }
+          touchStartPosition: { x: touch.clientX, y: touch.clientY }
         }))
       }
     } else if (e.touches.length === 2) {
@@ -474,83 +490,77 @@ export const useCanvasStore = create<CanvasState>((set: (fn: (state: CanvasState
       const distance = getDistance(touch1.clientX, touch1.clientY, touch2.clientX, touch2.clientY)
       const center = getCenterPoint(touch1, touch2)
       
-      set(state => ({ 
-        ...state, 
-        isPinching: true,
-        pinchStart: {
-          distance,
-          centerX: center.x,
-          centerY: center.y,
-          scale: viewport.scale
-        }
-      }))
+      const rect = ref?.current?.getBoundingClientRect()
+      if (rect) {
+        const centerWorldX = (center.x - rect.left) / viewport.scale + viewport.x
+        const centerWorldY = (center.y - rect.top) / viewport.scale + viewport.y
+        
+        set(state => ({ 
+          ...state, 
+          isPinching: true,
+          drawing: false,
+          pinchStart: {
+            distance,
+            centerX: center.x,
+            centerY: center.y,
+            centerWorldX,
+            centerWorldY,
+            scale: viewport.scale
+          },
+          twoFingerStart: {
+            centerX: center.x,
+            centerY: center.y,
+            centerWorldX,
+            centerWorldY,
+            viewportX: viewport.x,
+            viewportY: viewport.y
+          }
+        }))
+      }
     }
   },
   handleTouchMove: (e: React.TouchEvent<HTMLDivElement>) => {
     e.preventDefault()
+    e.stopPropagation()
+    
     const updates: Partial<CanvasState> = {}
+    const state = get()
     
     if (e.touches.length === 1) {
       const touch = e.touches[0]
-      const state = get()
-      
-      if (state.touchStartPosition && state.touchStartTime) {
-        const distance = getDistance(
-          state.touchStartPosition.x,
-          state.touchStartPosition.y,
-          touch.clientX,
-          touch.clientY
-        )
-        const timeElapsed = Date.now() - state.touchStartTime
-        
-        if (distance > state.touchPanThreshold || timeElapsed > state.touchTimeThreshold) {
-          if (!state.isTouchPanning && !state.drawing) {
-            set(state => ({ ...state, isTouchPanning: true }))
-          }
-          
-          if (state.isTouchPanning && state.touchStart) {
-            const dx = touch.clientX - state.touchStart.touchX
-            const dy = touch.clientY - state.touchStart.touchY
-            updates.viewport = {
-              ...state.viewport,
-              x: state.touchStart.x - dx / state.viewport.scale,
-              y: state.touchStart.y - dy / state.viewport.scale,
-            }
-          }
-        } else if (!state.drawing) {
-          const rect = state.canvasRef?.current?.getBoundingClientRect()
-          if (rect) {
-            const worldX = (touch.clientX - rect.left) / state.viewport.scale + state.viewport.x
-            const worldY = (touch.clientY - rect.top) / state.viewport.scale + state.viewport.y
-            updates.drawing = true
-            updates.lastPoint = { x: worldX, y: worldY }
-          }
-        }
-      }
       
       if (state.drawing) {
+        // Single finger always draws, never pans
         const worldPos = state.screenToWorld(touch.clientX, touch.clientY)
         updates.lastPoint = worldPos
       }
-    } else if (e.touches.length === 2 && get().isPinching && get().pinchStart) {
+    } else if (e.touches.length === 2) {
       const touch1 = e.touches[0]
       const touch2 = e.touches[1]
       const currentDistance = getDistance(touch1.clientX, touch1.clientY, touch2.clientX, touch2.clientY)
       const currentCenter = getCenterPoint(touch1, touch2)
       
-      const scaleRatio = currentDistance / get().pinchStart!.distance
-      const newScale = Math.max(0.1, Math.min(5, get().pinchStart!.scale * scaleRatio))
-      
-      const ref = get().canvasRef
-      const rect = ref?.current?.getBoundingClientRect()
-      if (rect) {
-        const centerX = (currentCenter.x - rect.left) / get().viewport.scale + get().viewport.x
-        const centerY = (currentCenter.y - rect.top) / get().viewport.scale + get().viewport.y
-        
-        updates.viewport = {
-          scale: newScale,
-          x: centerX - currentCenter.x / newScale,
-          y: centerY - currentCenter.y / newScale
+      if (state.isPinching && state.pinchStart && state.twoFingerStart) {
+        const ref = state.canvasRef
+        const rect = ref?.current?.getBoundingClientRect()
+        if (rect) {
+          const scaleRatio = currentDistance / state.pinchStart.distance
+          const newScale = Math.max(0.1, Math.min(5, state.pinchStart.scale * scaleRatio))
+          
+          const originalCenterWorldX = state.pinchStart.centerWorldX
+          const originalCenterWorldY = state.pinchStart.centerWorldY
+          
+          const newCenterWorldX = (currentCenter.x - rect.left) / newScale + state.viewport.x
+          const newCenterWorldY = (currentCenter.y - rect.top) / newScale + state.viewport.y
+          
+          const worldDeltaX = newCenterWorldX - originalCenterWorldX
+          const worldDeltaY = newCenterWorldY - originalCenterWorldY
+          
+          updates.viewport = {
+            scale: newScale,
+            x: state.viewport.x - worldDeltaX,
+            y: state.viewport.y - worldDeltaY
+          }
         }
       }
     }
@@ -559,14 +569,17 @@ export const useCanvasStore = create<CanvasState>((set: (fn: (state: CanvasState
   },
   handleTouchEnd: (e: React.TouchEvent<HTMLDivElement>) => {
     e.preventDefault()
+    e.stopPropagation()
+    
     set(state => ({ 
       ...state, 
       drawing: false, 
-      isTouchPanning: false, 
       isPinching: false,
+      isTouchPanning: false,
       lastPoint: null, 
-      touchStart: null,
       pinchStart: null,
+      twoFingerStart: null,
+      touchStart: null,
       touchStartTime: null,
       touchStartPosition: null
     }))

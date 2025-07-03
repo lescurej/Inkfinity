@@ -448,21 +448,16 @@ const Canvas: React.FC = () => {
       if (!isReady) return;
 
       handleTouchStart(e);
+
+      // Only handle drawing for single touch
       if (e.touches.length === 1) {
         const touch = e.touches[0];
         const { x, y } = screenToWorld(touch.clientX, touch.clientY);
         setCurrentStroke([{ x, y }]);
         canvasStore.setLastPoint({ x, y });
-        canvasStore.setDrawing(true);
       }
     },
-    [
-      isReady,
-      handleTouchStart,
-      screenToWorld,
-      canvasStore.setLastPoint,
-      canvasStore.setDrawing,
-    ]
+    [isReady, handleTouchStart, screenToWorld, canvasStore.setLastPoint]
   );
 
   const handleCanvasTouchMove = useCallback(
@@ -471,6 +466,7 @@ const Canvas: React.FC = () => {
 
       handleTouchMove(e);
 
+      // Only handle drawing for single touch
       if (
         e.touches.length === 1 &&
         canvasStore.drawing &&
@@ -554,7 +550,9 @@ const Canvas: React.FC = () => {
       if (!isReady) return;
 
       handleTouchEnd(e);
-      if (currentStroke.length > 1) {
+
+      // Only finish stroke if we were actually drawing
+      if (currentStroke.length > 1 && canvasStore.drawing) {
         const stroke = createStroke(
           currentStroke,
           brushColor,
@@ -570,6 +568,7 @@ const Canvas: React.FC = () => {
       isReady,
       handleTouchEnd,
       currentStroke,
+      canvasStore.drawing,
       brushColor,
       getBrushSizeInPixels,
       brushType,
