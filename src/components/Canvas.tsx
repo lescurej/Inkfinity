@@ -84,7 +84,12 @@ const Canvas: React.FC = () => {
     setCanvasRef,
   } = canvasStore;
 
-  const { brushColor, brushType, getBrushSizeInPixels } = useBrush();
+  const {
+    brushColor,
+    brushType,
+    getBrushSizeInPixels,
+    getBrushSizeForDrawing,
+  } = useBrush();
   const { emit, on, off, isConnected } = useCanvasSocket();
 
   const canvasRefCallback = useCallback(
@@ -428,7 +433,7 @@ const Canvas: React.FC = () => {
         canvasStore.setLastPoint({ x, y });
 
         if (newStroke.length >= 2) {
-          const size = getBrushSizeInPixels() * viewport.scale;
+          const size = getBrushSizeForDrawing(viewport.scale);
           const graphics = drawingGraphicsRef.current;
 
           if (graphics && brushType !== "eraser") {
@@ -469,6 +474,7 @@ const Canvas: React.FC = () => {
       myUUID,
       brushType,
       getDisplayName,
+      getBrushSizeForDrawing,
     ]
   );
 
@@ -539,7 +545,7 @@ const Canvas: React.FC = () => {
         canvasStore.setLastPoint({ x, y });
 
         if (newStroke.length >= 2) {
-          const size = getBrushSizeInPixels() * viewport.scale;
+          const size = getBrushSizeForDrawing(viewport.scale);
           const graphics = drawingGraphicsRef.current;
 
           if (graphics && brushType !== "eraser") {
@@ -603,6 +609,7 @@ const Canvas: React.FC = () => {
       brushType,
       handleTouchMove,
       getDisplayName,
+      getBrushSizeForDrawing,
     ]
   );
 

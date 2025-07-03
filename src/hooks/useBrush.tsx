@@ -21,6 +21,8 @@ interface BrushContextValue {
   updateBrushSize: (size: number | string) => void;
   updateBrushType: (type: BrushType) => void;
   getBrushSizeInPixels: () => number;
+  getBrushSizeForDrawing: (viewportScale: number) => number;
+  getBrushSizeForDisplay: (viewportScale: number) => number;
 }
 
 const BrushContext = createContext<BrushContextValue | undefined>(undefined);
@@ -51,6 +53,22 @@ export const BrushProvider: FC<{ children: ReactNode }> = ({ children }) => {
     return (brushSizePercent / 100) * screenSize;
   }, [brushSizePercent]);
 
+  const getBrushSizeForDrawing = useCallback(
+    (viewportScale: number) => {
+      const baseSize = getBrushSizeInPixels();
+      return baseSize * viewportScale;
+    },
+    [getBrushSizeInPixels]
+  );
+
+  const getBrushSizeForDisplay = useCallback(
+    (viewportScale: number) => {
+      const baseSize = getBrushSizeInPixels();
+      return Math.max(baseSize * viewportScale, 8);
+    },
+    [getBrushSizeInPixels]
+  );
+
   // Recalculer la taille quand la fenêtre change
   useEffect(() => {
     const handleResize = () => {
@@ -78,6 +96,8 @@ export const BrushProvider: FC<{ children: ReactNode }> = ({ children }) => {
         updateBrushSize,
         updateBrushType,
         getBrushSizeInPixels,
+        getBrushSizeForDrawing,
+        getBrushSizeForDisplay,
       }}
     >
       {children}
