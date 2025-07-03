@@ -1,4 +1,6 @@
 import * as PIXI from 'pixi.js'
+import { GraphicsPool, StampPool } from './objectPool'
+import { CONFIG } from '../../types'
 
 export interface BrushStamp {
   x: number
@@ -47,6 +49,15 @@ export class BrushEngine {
   private loaded = false
   private stampPool: BrushStamp[] = []
   private poolSize = 1000
+  private graphicsPool: GraphicsPool
+  private stampPool: StampPool
+  private instancedRenderer: InstancedRenderer
+
+  constructor() {
+    this.graphicsPool = new GraphicsPool(CONFIG.OBJECT_POOL_SIZE)
+    this.stampPool = new StampPool(CONFIG.OBJECT_POOL_SIZE * 2)
+    this.instancedRenderer = new InstancedRenderer()
+  }
 
   private getStampFromPool(): BrushStamp {
     if (this.stampPool.length > 0) {
@@ -307,150 +318,55 @@ export class BrushEngine {
     color: string
   ) {
     const startTime = performance.now();
-    console.log(`🎨 Rendering ${stamps.length} stamps for ${brushType}`);
-
-    const config = this.configs.get(brushType)
-    if (!config) return
-
-    if (brushType === 'charcoal') {
-      // Batch all dabs into a single Graphics for performance, no blur
-      const g = new PIXI.Graphics()
-      stamps.forEach(stamp => {
-        let c = color
-        let alpha = stamp.opacity * (0.5 + Math.random() * 0.3)
-        let w = stamp.size * (0.8 + Math.random() * 0.7)
-        let h = stamp.size * (1.2 + Math.random() * 0.7)
-        g.beginFill(PIXI.Color.shared.setValue(c).toNumber(), alpha)
-        g.drawEllipse(stamp.x, stamp.y, w, h)
-        g.endFill()
-      })
-      g.blendMode = PIXI.BLEND_MODES.DARKEN
-      graphics.addChild(g)
-      return
+    
+    if (stamps.length > 50 && this.instancedRenderer.isSupported()) {
+      this.renderInstancedStamps(graphics, stamps, brushType, color);
+    } else {
+      this.renderPooledStamps(graphics, stamps, brushType, color);
     }
 
-    // Always use fallback rendering for now
-    this.renderFallbackStamps(graphics, stamps, color, config)
-
     const renderTime = performance.now() - startTime;
-    console.log(`✅ Rendered stamps in ${renderTime.toFixed(2)}ms`);
-    
     if (renderTime > 16) {
       console.warn(`🐌 Slow stamp render: ${renderTime.toFixed(2)}ms`);
     }
   }
 
-  private renderFallbackStamps(
+  private renderPooledStamps(
     graphics: PIXI.Graphics,
     stamps: BrushStamp[],
-    color: string,
-    config: BrushConfig
+    brushType: string,
+    color: string
   ) {
+    const config = this.configs.get(brushType);
+    if (!config) return;
+
+    const stampGraphics = this.stampPool.acquire();
+    
     stamps.forEach(stamp => {
-      const g = new PIXI.Graphics()
-      let c = color
-      let alpha = stamp.opacity
-      let blend = PIXI.BLEND_MODES.NORMAL
-      let shape = 'circle'
-      let w = stamp.size, h = stamp.size
-      let blur = 0
-      switch (config.name) {
-        case 'eraser':
-          blend = PIXI.BLEND_MODES.DST_OUT
-          g.blendMode = blend
-          g.position.set(stamp.x, stamp.y)
-          g.drawCircle(0, 0, w / 2)
-          graphics.addChild(g)
-          return
-        case 'pencil':
-          blend = PIXI.BLEND_MODES.MULTIPLY
-          alpha *= 0.5 + 0.5 * stamp.pressure
-          w *= 0.7 + Math.random() * 0.2
-          h *= 0.9 + Math.random() * 0.2
-          shape = 'ellipse'
-          break
-        case 'colored-pencil':
-          blend = PIXI.BLEND_MODES.MULTIPLY
-          c = colorSaturate(color, 0.7)
-          alpha *= 0.6 + 0.4 * stamp.pressure
-          w *= 0.7 + Math.random() * 0.2
-          h *= 0.9 + Math.random() * 0.2
-          shape = 'ellipse'
-          break
-        case 'charcoal':
-          blend = PIXI.BLEND_MODES.DARKEN
-          alpha *= 0.7 * (0.7 + Math.random() * 0.5)
-          w *= 0.8 + Math.random() * 0.7
-          h *= 1.2 + Math.random() * 0.7
-          shape = 'ellipse'
-          blur = 0 // No blur for perf
-          break
-        case 'pastel':
-          blend = PIXI.BLEND_MODES.LIGHTEN
-          c = colorSaturate(color, 1.2)
-          alpha *= 0.3 + Math.random() * 0.3
-          w *= 0.5 + Math.random() * 0.5
-          h *= 0.5 + Math.random() * 0.5
-          shape = 'circle'
-          blur = 0 // No blur for perf
-          break
-        case 'watercolor':
-          blend = PIXI.BLEND_MODES.SCREEN
-          alpha *= 0.15 + Math.random() * 0.15
-          w *= 1.1 + Math.random() * 0.2
-          h *= 0.8 + Math.random() * 0.2
-          shape = 'ellipse'
-          blur = 1 // Only watercolor keeps a little blur
-          break
-        case 'gouache':
-          blend = PIXI.BLEND_MODES.OVERLAY
-          alpha *= 0.9
-          w *= 1.1
-          h *= 0.9
-          shape = 'ellipse'
-          blur = 0 // No blur for perf
-          break
-        case 'oil':
-          blend = PIXI.BLEND_MODES.OVERLAY
-          alpha *= 0.8
-          w *= 1.2 + Math.random() * 0.2
-          h *= 1.1 + Math.random() * 0.2
-          c = colorTint(color, 0.9 + Math.random() * 0.2)
-          shape = 'ellipse'
-          blur = 0 // No blur for perf
-          break
-        case 'marker':
-          blend = PIXI.BLEND_MODES.NORMAL
-          alpha *= 0.7
-          w *= 0.7
-          h *= 0.4
-          shape = 'ellipse'
-          blur = 0 // No blur for perf
-          break
-        case 'highlighter':
-          blend = PIXI.BLEND_MODES.SCREEN
-          c = colorSaturate(color, 1.5)
-          alpha *= 0.18
-          w *= 1.2
-          h *= 0.3
-          shape = 'rect'
-          blur = 0 // No blur for perf
-          break
-        default:
-          blend = PIXI.BLEND_MODES.NORMAL
-          shape = 'circle'
-      }
-      g.blendMode = blend
-      g.beginFill(PIXI.Color.shared.setValue(c).toNumber(), alpha)
-      g.position.set(stamp.x, stamp.y)
-      g.rotation = stamp.rotation
-      if (shape === 'ellipse') g.drawEllipse(0, 0, w, h)
-      else if (shape === 'rect') g.drawRect(-w/2, -h/2, w, h)
-      else g.drawCircle(0, 0, w/2)
-      g.endFill()
-      if (blur > 0) g.filters = [new PIXI.BlurFilter(blur)]
-      graphics.addChild(g)
-    })
+      const alpha = stamp.opacity * (0.5 + Math.random() * 0.3);
+      const w = stamp.size * (0.8 + Math.random() * 0.7);
+      const h = stamp.size * (1.2 + Math.random() * 0.7);
+      
+      stampGraphics.beginFill(PIXI.Color.shared.setValue(color).toNumber(), alpha);
+      stampGraphics.drawEllipse(stamp.x, stamp.y, w, h);
+      stampGraphics.endFill();
+    });
+
+    stampGraphics.blendMode = PIXI.BLEND_MODES.DARKEN;
+    graphics.addChild(stampGraphics);
+    
+    setTimeout(() => {
+      this.stampPool.release(stampGraphics);
+    }, 100);
+  }
+
+  private renderInstancedStamps(
+    graphics: PIXI.Graphics,
+    stamps: BrushStamp[],
+    brushType: string,
+    color: string
+  ) {
+    this.instancedRenderer.renderStamps(stamps, color, brushType);
   }
 
   getConfig(brushType: string): BrushConfig | undefined {
@@ -467,6 +383,163 @@ export class BrushEngine {
   // Add cleanup method
   cleanupStamps(stamps: BrushStamp[]) {
     stamps.forEach(stamp => this.returnStampToPool(stamp));
+  }
+
+  destroy(): void {
+    this.graphicsPool.clear();
+    this.stampPool.clear();
+    this.instancedRenderer.destroy();
+  }
+}
+
+class InstancedRenderer {
+  private gl: WebGLRenderingContext | null = null;
+  private program: WebGLProgram | null = null;
+  private vertexBuffer: WebGLBuffer | null = null;
+  private instanceBuffer: WebGLBuffer | null = null;
+
+  constructor() {
+    this.initWebGL();
+  }
+
+  private initWebGL(): void {
+    const canvas = document.createElement('canvas');
+    this.gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+    
+    if (!this.gl) {
+      console.warn('WebGL not supported, falling back to standard rendering');
+      return;
+    }
+
+    this.createShaders();
+    this.createBuffers();
+  }
+
+  private createShaders(): void {
+    const vertexShader = `
+      attribute vec2 a_position;
+      attribute vec2 a_offset;
+      attribute float a_size;
+      attribute float a_alpha;
+      
+      uniform mat3 u_matrix;
+      uniform vec2 u_resolution;
+      
+      varying float v_alpha;
+      
+      void main() {
+        vec2 position = (u_matrix * vec3(a_position * a_size + a_offset, 1.0)).xy;
+        gl_Position = vec4(position / u_resolution * 2.0 - 1.0, 0, 1);
+        v_alpha = a_alpha;
+      }
+    `;
+
+    const fragmentShader = `
+      precision mediump float;
+      uniform vec3 u_color;
+      varying float v_alpha;
+      
+      void main() {
+        gl_FragColor = vec4(u_color, v_alpha);
+      }
+    `;
+
+    this.program = this.createProgram(vertexShader, fragmentShader);
+  }
+
+  private createProgram(vertexSource: string, fragmentSource: string): WebGLProgram | null {
+    if (!this.gl) return null;
+
+    const vertexShader = this.createShader(this.gl.VERTEX_SHADER, vertexSource);
+    const fragmentShader = this.createShader(this.gl.FRAGMENT_SHADER, fragmentSource);
+    
+    if (!vertexShader || !fragmentShader) return null;
+
+    const program = this.gl.createProgram();
+    if (!program) return null;
+
+    this.gl.attachShader(program, vertexShader);
+    this.gl.attachShader(program, fragmentShader);
+    this.gl.linkProgram(program);
+
+    if (!this.gl.getProgramParameter(program, this.gl.LINK_STATUS)) {
+      console.error('Program link error:', this.gl.getProgramInfoLog(program));
+      return null;
+    }
+
+    return program;
+  }
+
+  private createShader(type: number, source: string): WebGLShader | null {
+    if (!this.gl) return null;
+
+    const shader = this.gl.createShader(type);
+    if (!shader) return null;
+
+    this.gl.shaderSource(shader, source);
+    this.gl.compileShader(shader);
+
+    if (!this.gl.getShaderParameter(shader, this.gl.COMPILE_STATUS)) {
+      console.error('Shader compile error:', this.gl.getShaderInfoLog(shader));
+      return null;
+    }
+
+    return shader;
+  }
+
+  private createBuffers(): void {
+    if (!this.gl) return;
+
+    this.vertexBuffer = this.gl.createBuffer();
+    this.instanceBuffer = this.gl.createBuffer();
+  }
+
+  renderStamps(stamps: BrushStamp[], color: string, brushType: string): void {
+    if (!this.gl || !this.program || stamps.length === 0) return;
+
+    const colorVec = this.hexToRgb(color);
+    if (!colorVec) return;
+
+    this.gl.useProgram(this.program);
+    this.gl.uniform3f(
+      this.gl.getUniformLocation(this.program, 'u_color'),
+      colorVec[0], colorVec[1], colorVec[2]
+    );
+
+    const instanceData = new Float32Array(stamps.length * 4);
+    stamps.forEach((stamp, i) => {
+      const offset = i * 4;
+      instanceData[offset] = stamp.x;
+      instanceData[offset + 1] = stamp.y;
+      instanceData[offset + 2] = stamp.size;
+      instanceData[offset + 3] = stamp.opacity;
+    });
+
+    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.instanceBuffer);
+    this.gl.bufferData(this.gl.ARRAY_BUFFER, instanceData, this.gl.DYNAMIC_DRAW);
+
+    this.gl.drawArraysInstanced(this.gl.TRIANGLES, 0, 6, stamps.length);
+  }
+
+  private hexToRgb(hex: string): number[] | null {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result ? [
+      parseInt(result[1], 16) / 255,
+      parseInt(result[2], 16) / 255,
+      parseInt(result[3], 16) / 255
+    ] : null;
+  }
+
+  isSupported(): boolean {
+    return this.gl !== null && this.program !== null;
+  }
+
+  destroy(): void {
+    if (this.gl) {
+      if (this.vertexBuffer) this.gl.deleteBuffer(this.vertexBuffer);
+      if (this.instanceBuffer) this.gl.deleteBuffer(this.instanceBuffer);
+      if (this.program) this.gl.deleteProgram(this.program);
+    }
   }
 }
 

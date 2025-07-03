@@ -2,6 +2,8 @@ import { useEffect, useCallback, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { EVENTS } from "../../types"
 import { useUserStore } from '../store/userStore';
+import { MessageBatcher } from '../utils/messageBatcher';
+import { ProgressiveLoader } from '../utils/progressiveLoader';
 
 interface SocketStats {
   totalStrokes: number;
@@ -192,6 +194,7 @@ export const useCanvasSocket = () => {
   const [isLoading, setIsLoading] = useState(globalConnectionState.isLoading);
   const [connectionAttempts, setConnectionAttempts] = useState(globalConnectionState.connectionAttempts);
   const [stats, setStats] = useState<SocketStats | null>(globalConnectionState.stats);
+  const { uuid } = useUserStore();
   
   const emit = useCallback((event: string, data?: any) => {
     if (globalSocket?.connected) {
@@ -235,6 +238,46 @@ export const useCanvasSocket = () => {
     setIsConnected(false);
   }, []);
 
+  const [batcher] = useState(() => new MessageBatcher(emit));
+  const [progressiveLoader] = useState(() => 
+    new ProgressiveLoader(
+      (chunkIndex, viewport) => emit(EVENTS.REQUEST_PROGRESSIVE_STROKES, viewport),
+      (chunk, chunkIndex) => {
+        // Handle chunk loaded
+        console.log(`📦 Progressive chunk ${chunkIndex} loaded:`, chunk.length, 'strokes');
+      }
+    )
+  );
+
+  // Enhanced event handlers
+  useEffect(() => {
+    if (!isConnected) return;
+
+    const handleStrokeSegmentBatch = (batch: StrokeSegmentBatch) => {
+      batch.segments.forEach(segment => {
+        // Handle individual segments from batch
+        console.log(' Processing batched segment:', segment);
+      });
+    };
+
+    const handleProgressiveChunk = (chunk: ProgressiveStrokeChunk) => {
+      progressiveLoader.handleChunkLoaded(chunk.strokes, chunk.chunkIndex);
+    };
+
+    on(EVENTS.STROKE_SEGMENT_BATCH, handleStrokeSegmentBatch);
+    on(EVENTS.PROGRESSIVE_STROKE_CHUNK, handleProgressiveChunk);
+
+    return () => {
+      off(EVENTS.STROKE_SEGMENT_BATCH, handleStrokeSegmentBatch);
+      off(EVENTS.PROGRESSIVE_STROKE_CHUNK, handleProgressiveChunk);
+    };
+  }, [isConnected, on, off, progressiveLoader]);
+
+  // Enhanced emit function with batching
+  const emitStrokeSegment = useCallback((segment: StrokeSegment) => {
+    batcher.addSegment(uuid, segment);
+  }, [batcher, uuid]);
+
   useEffect(() => {
     if (!globalSocket) {
       connectGlobal();
@@ -276,6 +319,10 @@ export const useCanvasSocket = () => {
     on,
     off,
     getStats,
-    disconnect
+    disconnect,
+    emitStrokeSegment,
+    requestProgressiveStrokes: (viewport: Viewport) => 
+      progressiveLoader.requestVisibleChunks(viewport, []),
+    getLoaderStats: () => progressiveLoader.getCacheStats()
   };
 }; 

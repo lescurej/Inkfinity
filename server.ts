@@ -18,8 +18,11 @@ import {
   ArtistNameChange,
   StrokeSegment,
   CanvasState,
-  ServerStats
+  ServerStats,
+  StrokeSegmentBatch
 } from './types.js';
+import { MessageBatcher } from './src/utils/messageBatcher.js';
+import { ProgressiveLoader } from './src/utils/progressiveLoader.js';
 
 const ARTISTS = [
   "Leonardo da Vinci","Michelangelo","Raphaël","Caravage","Rembrandt","Johannes Vermeer","Diego Velázquez","Francisco Goya","Claude Monet","Édouard Manet","Vincent van Gogh","Paul Cézanne","Paul Gauguin","Henri Matisse","Pablo Picasso","Salvador Dalí","Joan Miró","Marc Chagall","Wassily Kandinsky","Jackson Pollock","Mark Rothko","Andy Warhol","Roy Lichtenstein","Jean-Michel Basquiat","Frida Kahlo","Diego Rivera","Artemisia Gentileschi","Tamara de Lempicka","Georges Braque","Kazimir Malevich","Piet Mondrian","David Hockney","Gerhard Richter","Pierre Soulages","Yayoi Kusama","Takashi Murakami","Zao Wou-Ki","Jean Dubuffet","Niki de Saint Phalle","Gustav Klimt","Egon Schiele","Hergé","Albert Uderzo","René Goscinny","Morris","Franquin","Peyo","Moebius (Jean Giraud)","Enki Bilal","Tardi","Manu Larcenet","Lewis Trondheim","Marjane Satrapi","Art Spiegelman","Osamu Tezuka","Akira Toriyama","Katsuhiro Otomo","Naoki Urasawa","Hajime Isayama","Eiichiro Oda","Takehiko Inoue","Hirohiko Araki","Frank Miller","Alan Moore","Mike Mignola","Jim Lee","Saul Bass","Paul Rand","Milton Glaser","David Carson","Massimo Vignelli","Neville Brody","April Greiman","Paula Scher","Stefan Sagmeister","Jessica Walsh","Chip Kidd","Peter Saville","Barbara Kruger","Shepard Fairey","Shigeo Fukuda","Tadanori Yokoo","Alex Trochut","Christoph Niemann","Malika Favre","Jean Jullien","Oliviero Toscani","Luba Lukova","Eric Carle","Charley Harper","Mary Blair","Christoph Niemann","Banksy","Keith Haring","Laurent Durieux","Tom Whalen"
@@ -94,6 +97,9 @@ const userViewports = new Map<string, Viewport>();
 const messageThrottles = new Map<string, { [event: string]: number }>();
 
 const HISTORY_FILE = './canvas-history.json';
+
+const messageBatches = new Map<string, MessageBatcher>();
+const progressiveLoaders = new Map<string, ProgressiveLoader>();
 
 function getStrokesInViewport(viewport: Viewport | null): Stroke[] {
   if (!viewport) return canvasState.strokes;
@@ -280,6 +286,11 @@ io.on('connection', (socket: Socket) => {
   connectionTimes.set(socket.id, connectionTime);
   console.log(`✅ Connection established in ${connectionTime.toFixed(2)}ms for ${serverAssignedUUID}`);
   
+  const batcher = new MessageBatcher((event, data) => {
+    socket.broadcast.emit(event, data);
+  });
+  messageBatches.set(socket.id, batcher);
+
   socket.on(EVENTS.STROKE_ADDED, (stroke: Stroke) => {
     if (isRateLimited(socket.id, EVENTS.STROKE_ADDED, 50)) return;
     
@@ -300,11 +311,18 @@ io.on('connection', (socket: Socket) => {
   
   socket.on(EVENTS.STROKE_SEGMENT, (segment: StrokeSegment) => {
     if (isRateLimited(socket.id, EVENTS.STROKE_SEGMENT, 16)) return;
-    
     if (!isValidStrokeSegment(segment)) return;
     
-    socket.broadcast.emit(EVENTS.STROKE_SEGMENT, segment);
+    batcher.addSegment(serverAssignedUUID, segment);
     socketLastActivity.set(socket.id, Date.now());
+  });
+  
+  socket.on(EVENTS.STROKE_SEGMENT_BATCH, (batch: StrokeSegmentBatch) => {
+    if (!isValidStrokeSegmentBatch(batch)) return;
+    
+    batch.segments.forEach(segment => {
+      socket.broadcast.emit(EVENTS.STROKE_SEGMENT, segment);
+    });
   });
   
   socket.on(EVENTS.CURSOR_MOVE, (cursorData: CursorData) => {
@@ -402,6 +420,18 @@ io.on('connection', (socket: Socket) => {
     socket.emit(EVENTS.STATS, stats);
   });
   
+  socket.on(EVENTS.REQUEST_PROGRESSIVE_STROKES, (viewport: Viewport) => {
+    const chunks = getProgressiveChunks(viewport, canvasState.strokes);
+    chunks.forEach((chunk, index) => {
+      socket.emit(EVENTS.PROGRESSIVE_STROKE_CHUNK, {
+        strokes: chunk,
+        chunkIndex: index,
+        totalChunks: chunks.length,
+        viewport
+      });
+    });
+  });
+  
   socket.on('disconnect', () => {
     connectedUsers.delete(serverAssignedUUID);
     socketIdToUuid.delete(socket.id);
@@ -412,8 +442,25 @@ io.on('connection', (socket: Socket) => {
     lastClearTime.delete(serverAssignedUUID);
     
     io.emit(EVENTS.USER_DISCONNECT, serverAssignedUUID);
+    
+    const batcher = messageBatches.get(socket.id);
+    if (batcher) {
+      batcher.flushAll();
+      messageBatches.delete(socket.id);
+    }
   });
 });
+
+function getProgressiveChunks(viewport: Viewport, strokes: Stroke[]): Stroke[][] {
+  const visibleStrokes = getStrokesInViewport(viewport);
+  const chunks: Stroke[][] = [];
+  
+  for (let i = 0; i < visibleStrokes.length; i += CONFIG.PROGRESSIVE_CHUNK_SIZE) {
+    chunks.push(visibleStrokes.slice(i, i + CONFIG.PROGRESSIVE_CHUNK_SIZE));
+  }
+  
+  return chunks;
+}
 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || 'localhost';

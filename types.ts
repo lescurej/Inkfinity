@@ -100,20 +100,36 @@ export interface ServerStats {
   activeUsers: number;
 }
 
-// Event constants as the single source of truth
+export interface StrokeSegmentBatch {
+  segments: StrokeSegment[];
+  timestamp: number;
+  uuid: string;
+}
+
+export interface ProgressiveStrokeChunk {
+  strokes: Stroke[];
+  chunkIndex: number;
+  totalChunks: number;
+  viewport: Viewport;
+}
+
+// Enhanced events
 export const EVENTS = {
   STROKE_ADDED: 'strokeAdded',
   STROKE_SEGMENT: 'strokeSegment',
+  STROKE_SEGMENT_BATCH: 'strokeSegmentBatch',
   CURSOR_MOVE: 'cursorMove',
   CLEAR_CANVAS: 'clear-canvas',
   REQUEST_STATE: 'requestState',
   REQUEST_DRAWING_HISTORY: 'requestDrawingHistory',
+  REQUEST_PROGRESSIVE_STROKES: 'requestProgressiveStrokes',
   ARTIST_NAME_CHANGE: 'artistNameChange',
   PING: 'ping',
   GET_STATS: 'get-stats',
   STROKES_REMOVED: 'strokes-removed',
   CANVAS_STATE: 'canvas-state',
   DRAWING_HISTORY: 'drawingHistory',
+  PROGRESSIVE_STROKE_CHUNK: 'progressiveStrokeChunk',
   CANVAS_CLEARED: 'canvas-cleared',
   REMOTE_CURSOR: 'remoteCursor',
   USER_CONNECT: 'userConnect',
@@ -126,24 +142,29 @@ export const EVENTS = {
   CONNECT_ERROR: 'connect_error'
 } as const;
 
-// Configuration
+// Enhanced configuration
 export const CONFIG = {
   MAX_STROKES: 2000,
   SAVE_INTERVAL: 30000,
   CLEANUP_INTERVAL: 300000,
   HEARTBEAT_INTERVAL: 30000,
   VIEWPORT_PADDING: 200,
-  BATCH_SIZE: 50
+  BATCH_SIZE: 10,
+  BATCH_TIMEOUT: 50,
+  PROGRESSIVE_CHUNK_SIZE: 100,
+  OBJECT_POOL_SIZE: 50
 } as const;
 
 // Client to Server message types derived from EVENTS
 export interface ClientToServerMessages {
   [EVENTS.STROKE_ADDED]: Stroke;
   [EVENTS.STROKE_SEGMENT]: StrokeSegment;
+  [EVENTS.STROKE_SEGMENT_BATCH]: StrokeSegmentBatch;
   [EVENTS.CURSOR_MOVE]: CursorData;
   [EVENTS.CLEAR_CANVAS]: void;
   [EVENTS.REQUEST_STATE]: void;
   [EVENTS.REQUEST_DRAWING_HISTORY]: void;
+  [EVENTS.REQUEST_PROGRESSIVE_STROKES]: Viewport;
   [EVENTS.ARTIST_NAME_CHANGE]: ArtistNameChange;
   [EVENTS.PING]: void;
   [EVENTS.GET_STATS]: void;
@@ -153,9 +174,11 @@ export interface ClientToServerMessages {
 export interface ServerToClientMessages {
   [EVENTS.STROKE_ADDED]: Stroke;
   [EVENTS.STROKE_SEGMENT]: StrokeSegment;
+  [EVENTS.STROKE_SEGMENT_BATCH]: StrokeSegmentBatch;
   [EVENTS.STROKES_REMOVED]: StrokesRemoved;
   [EVENTS.CANVAS_STATE]: CanvasState;
   [EVENTS.DRAWING_HISTORY]: Stroke[];
+  [EVENTS.PROGRESSIVE_STROKE_CHUNK]: ProgressiveStrokeChunk;
   [EVENTS.CANVAS_CLEARED]: void;
   [EVENTS.REMOTE_CURSOR]: CursorData;
   [EVENTS.USER_CONNECT]: CursorData;
@@ -216,4 +239,13 @@ export function isValidStrokeSegment(segment: any): segment is StrokeSegment {
     typeof segment.size === 'number' &&
     typeof segment.brush === 'string' &&
     typeof segment.uuid === 'string';
+}
+
+export function isValidStrokeSegmentBatch(batch: any): batch is StrokeSegmentBatch {
+  return batch &&
+    Array.isArray(batch.segments) &&
+    batch.segments.length > 0 &&
+    batch.segments.every(isValidStrokeSegment) &&
+    typeof batch.timestamp === 'number' &&
+    typeof batch.uuid === 'string';
 } 
