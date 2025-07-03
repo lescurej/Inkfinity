@@ -342,8 +342,30 @@ const Canvas: React.FC = () => {
 
       handleMouseMove(e);
 
+      // Emit cursor movement for remote cursors
+      const { x, y } = screenToWorld(e.clientX, e.clientY);
+      const cursorData = {
+        uuid: myUUID,
+        x,
+        y,
+        size: getBrushSizeInPixels(),
+        color: brushColor,
+        brush: brushType,
+        name:
+          useUserStore.getState().customName ||
+          useUserStore.getState().artistName ||
+          "Unknown Artist",
+        viewport: {
+          x: viewport.x,
+          y: viewport.y,
+          width: window.innerWidth,
+          height: window.innerHeight,
+          scale: viewport.scale,
+        },
+      };
+      emit(EVENTS.CURSOR_MOVE, cursorData);
+
       if (canvasStore.drawing && canvasStore.lastPoint) {
-        const { x, y } = screenToWorld(e.clientX, e.clientY);
         const newStroke = [...currentStroke, { x, y }];
         setCurrentStroke(newStroke);
         canvasStore.setLastPoint({ x, y });
@@ -384,6 +406,8 @@ const Canvas: React.FC = () => {
       screenToWorld,
       canvasStore.setLastPoint,
       viewport.scale,
+      viewport.x,
+      viewport.y,
       emit,
       myUUID,
       brushType,
